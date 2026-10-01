@@ -3,8 +3,11 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-purple-100 p-8">
       <main className="text-center max-w-2xl">
         <h1 className="text-5xl font-bold text-gray-900 mb-6">
-          Halo, ini Website AI Pertama Saya! 🚀
+          Website Otomatis Saya v2
         </h1>
+        <p className="text-lg text-gray-600 mb-4">
+          Halaman ini diubah oleh AI secara otomatis.
+        </p>
         <p className="text-xl text-gray-700 mb-8">
           Dibuat dengan Next.js + Vercel + AI
         </p>
