@@ -203,17 +203,19 @@ async function createRoom(){
     const {joinRoom} = await loadTrystero();
     net.room = joinRoom({
       appId: 'blobby-jelly-v1',
-      turnConfig: [
-        {
-          urls: [
-            'turn:openrelay.metered.ca:80',
-            'turn:openrelay.metered.ca:443',
-            'turn:openrelay.metered.ca:443?transport=tcp'
-          ],
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
+      rtcConfig: {
+        iceServers: [
+          {
+            urls: [
+              'turn:openrelay.metered.ca:80',
+              'turn:openrelay.metered.ca:443',
+              'turn:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
+      }
     }, net.roomCode);
     setupRoomHandlers();
 
@@ -249,17 +251,19 @@ async function joinRoomNet(code){
     const {joinRoom} = await loadTrystero();
     net.room = joinRoom({
       appId: 'blobby-jelly-v1',
-      turnConfig: [
-        {
-          urls: [
-            'turn:openrelay.metered.ca:80',
-            'turn:openrelay.metered.ca:443',
-            'turn:openrelay.metered.ca:443?transport=tcp'
-          ],
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
+      rtcConfig: {
+        iceServers: [
+          {
+            urls: [
+              'turn:openrelay.metered.ca:80',
+              'turn:openrelay.metered.ca:443',
+              'turn:openrelay.metered.ca:443?transport=tcp'
+            ],
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
+      }
     }, net.roomCode);
     setupRoomHandlers();
 
