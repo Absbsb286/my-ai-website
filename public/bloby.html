@@ -201,26 +201,7 @@ async function createRoom(){
 
   try {
     const {joinRoom} = await loadTrystero();
-    net.room = joinRoom({
-      appId: 'blobby-jelly-v1',
-      rtcConfig: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          {
-            urls: [
-              'turn:turn.evan-brass.net:3478?transport=udp',
-              'turn:turn.evan-brass.net:3478?transport=tcp',
-              'turn:turn.evan-brass.net:443?transport=tcp'
-            ],
-            username: 'user',
-            credential: 'password'
-          }
-        ]
-      }
-    }, net.roomCode);
+    net.room = joinRoom({ appId: 'blobby-jelly-v1' }, net.roomCode);
     setupRoomHandlers();
 
     net.players[net.myId] = {
@@ -253,26 +234,7 @@ async function joinRoomNet(code){
 
   try {
     const {joinRoom} = await loadTrystero();
-    net.room = joinRoom({
-      appId: 'blobby-jelly-v1',
-      rtcConfig: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          {
-            urls: [
-              'turn:turn.evan-brass.net:3478?transport=udp',
-              'turn:turn.evan-brass.net:3478?transport=tcp',
-              'turn:turn.evan-brass.net:443?transport=tcp'
-            ],
-            username: 'user',
-            credential: 'password'
-          }
-        ]
-      }
-    }, net.roomCode);
+    net.room = joinRoom({ appId: 'blobby-jelly-v1' }, net.roomCode);
     setupRoomHandlers();
 
     net.players[net.myId] = {
