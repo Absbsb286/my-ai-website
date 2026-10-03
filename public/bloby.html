@@ -152,7 +152,8 @@ const net = {
   connecting: false,
   isHost: false,
   peerIdToPlayerId: {},
-  module: null
+  module: null,
+  heartbeat: null
 };
 
 function genRoomCode(){
@@ -178,6 +179,7 @@ async function loadTrystero(){
 }
 
 function netCleanup(){
+  stopLobbyHeartbeat();
   if (net.room){ try { net.room.leave(); } catch(e){} }
   net.room = null;
   net.actions = {};
@@ -187,6 +189,21 @@ function netCleanup(){
   net.connecting = false;
   net.isHost = false;
   net.peerIdToPlayerId = {};
+}
+
+function startLobbyHeartbeat(){
+  stopLobbyHeartbeat();
+  net.heartbeat = setInterval(() => {
+    if (state !== 'waiting' || !net.room){ stopLobbyHeartbeat(); return; }
+    if (net.isHost) broadcastRoster();
+    else {
+      try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+    }
+  }, 1000);
+}
+
+function stopLobbyHeartbeat(){
+  if (net.heartbeat){ clearInterval(net.heartbeat); net.heartbeat = null; }
 }
 
 async function createRoom(){
@@ -330,7 +347,18 @@ function setupRoomHandlers(){
 
   getState((data) => {
     if (data.id === net.myId) return;
-    const p = net.players[data.id];
+    let p = net.players[data.id];
+    if (!p){
+      p = {
+        id: data.id,
+        x: data.x || 0, y: data.y || 0, vx: data.vx || 0, vy: data.vy || 0,
+        score: data.score || 0, coinCount: data.coinCount || 0,
+        powerTimer: 0, alive: true,
+        name: 'Pemain', skin: 'classic',
+        isMe: false, isHost: false
+      };
+      net.players[data.id] = p;
+    }
     if (p && !p.isMe){
       p.x = data.x;
       p.y = data.y;
@@ -345,6 +373,7 @@ function setupRoomHandlers(){
 
   getStart((data) => {
     if (net.isHost) return;
+    if (raceState.phase !== 'idle') return;
     setSeed(data.seed);
     raceState.startAt = performance.now() + data.delay;
     startRace(true);
@@ -2064,6 +2093,8 @@ function hostStartRace(){
     p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
   });
   try { net.actions.sendStart({seed, delay}); } catch(e){}
+  setTimeout(() => { try { net.actions.sendStart({seed, delay}); } catch(e){} }, 300);
+  setTimeout(() => { try { net.actions.sendStart({seed, delay}); } catch(e){} }, 600);
   setSeed(seed);
   raceState.startAt = performance.now() + delay;
   startRace(true);
@@ -2071,6 +2102,7 @@ function hostStartRace(){
 
 function setScene(s){
   state = s;
+  if (s === 'waiting') startLobbyHeartbeat(); else stopLobbyHeartbeat();
   if (s === 'join'){
     roomInput.style.display = 'block';
     roomInput.value = '';
