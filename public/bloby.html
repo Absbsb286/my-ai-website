@@ -163,6 +163,18 @@ function genRoomCode(){
   return c;
 }
 
+/* ---------- EMQX Serverless broker (replaces Trystero's default public relays) ----------
+   Trystero 0.21.3 has no separate username/password option for the broker:
+   credentials are embedded in the relay URL (wss://user:pass@host:port/path).
+   mqtt.js parses them out of the URL and sends them in the MQTT CONNECT
+   packet; the WebSocket connection itself carries no credentials. */
+const EMQX_WS_URL =
+  'wss://blobbyuser:BlobbyJelly2026!@c616191f.ala.asia-southeast1.emqxsl.com:8084/mqtt';
+const EMQX_ROOM_CONFIG = {
+  appId: 'blobby-jelly-v1',
+  relayUrls: [EMQX_WS_URL]
+};
+
 async function loadTrystero(){
   if (net.module) return net.module;
   try {
@@ -218,7 +230,7 @@ async function createRoom(){
 
   try {
     const {joinRoom} = await loadTrystero();
-    net.room = joinRoom({appId: 'blobby-jelly-v1'}, net.roomCode);
+    net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();
 
     net.players[net.myId] = {
@@ -251,7 +263,7 @@ async function joinRoomNet(code){
 
   try {
     const {joinRoom} = await loadTrystero();
-    net.room = joinRoom({appId: 'blobby-jelly-v1'}, net.roomCode);
+    net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();
 
     net.players[net.myId] = {
