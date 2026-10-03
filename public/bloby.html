@@ -314,7 +314,7 @@ function setupRoomHandlers(){
       net.players[data.id] = {
         x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
         powerTimer:0, alive:true, name: data.name, skin: data.skin,
-        ready:true, isMe:false, isHost: data.isHost
+        ready:true, isMe:false, isHost: data.isHost, history: []
       };
     }
     net.connected = true;
@@ -338,7 +338,7 @@ function setupRoomHandlers(){
         newList[p.id] = {
           x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0,
           powerTimer:0, alive:true, name:p.name, skin:p.skin,
-          ready:true, isMe:false, isHost:p.isHost
+          ready:true, isMe:false, isHost:p.isHost, history: []
         };
       }
     });
@@ -355,7 +355,8 @@ function setupRoomHandlers(){
         score: data.score || 0, coinCount: data.coinCount || 0,
         powerTimer: 0, alive: true,
         name: 'Pemain', skin: 'classic',
-        isMe: false, isHost: false
+        isMe: false, isHost: false,
+        history: []
       };
       net.players[data.id] = p;
     }
@@ -368,6 +369,9 @@ function setupRoomHandlers(){
       p.coinCount = data.coinCount;
       p.powerTimer = data.powerTimer;
       p.alive = data.alive;
+      if (!Array.isArray(p.history)) p.history = [];
+      p.history.push({t: performance.now(), x: data.x, y: data.y});
+      if (p.history.length > 4) p.history.shift();
     }
   });
 
@@ -1203,22 +1207,42 @@ function drawCharacter(x,y,size,powered,squash,vx,skinId,opacity){
   ctx.restore();
 }
 
+/* ---------- Entity Interpolation (remote players, 15Hz data -> 60fps render) ---------- */
+const INTERP_DELAY_MS = 100; // render posisi ~100ms lebih "lama" dari data terbaru
+
+function getInterpolatedPosition(pid){
+  const p = net.players[pid];
+  if (!p) return { x: 0, y: 0 };
+  const h = p.history;
+  if (!h || h.length < 2) return { x: p.x, y: p.y }; // pemain baru join: fallback posisi terakhir
+  const target = performance.now() - INTERP_DELAY_MS;
+  // cari indeks i sehingga h[i].t <= target <= h[i+1].t
+  let i = h.length - 2;
+  while (i > 0 && h[i].t > target) i--;
+  const a = h[i], b = h[i + 1];
+  const span = b.t - a.t;
+  if (span <= 0) return { x: b.x, y: b.y };
+  const f = Math.max(0, Math.min(1, (target - a.t) / span));
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+}
+
 function drawRemotePlayers(){
   Object.keys(net.players).forEach(pid => {
     if (pid === net.myId) return;
     const p = net.players[pid];
     if (!p || !p.alive) return;
-    drawCharacter(p.x, p.y - camY, 46, p.powerTimer > 0, 1, p.vx||0, p.skin||'classic');
+    const ip = getInterpolatedPosition(pid); // posisi halus hasil interpolasi
+    drawCharacter(ip.x, ip.y - camY, 46, p.powerTimer > 0, 1, p.vx||0, p.skin||'classic');
     ctx.save();
     ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     const tw = ctx.measureText(p.name).width;
-    const ty = p.y - camY - 40;
+    const ty = ip.y - camY - 40;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    roundRect(p.x - tw/2 - 6, ty - 9, tw + 12, 16, 8); ctx.fill();
+    roundRect(ip.x - tw/2 - 6, ty - 9, tw + 12, 16, 8); ctx.fill();
     ctx.fillStyle = '#ffe066';
     ctx.textBaseline = 'middle';
-    ctx.fillText(p.name, p.x, ty);
+    ctx.fillText(p.name, ip.x, ty);
     ctx.restore();
   });
 }
