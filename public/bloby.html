@@ -413,6 +413,12 @@ function setupRoomHandlers(){
       p.coinCount = data.coinCount;
       p.powerTimer = data.powerTimer;
       p.alive = data.alive;
+      if (data.name && (p.name === 'Pemain' || !p.name)) {
+        p.name = data.name;
+      }
+      if (data.skin && p.skin === 'classic') {
+        p.skin = data.skin;
+      }
       if (!Array.isArray(p.history)) p.history = [];
       p.history.push({t: performance.now(), x: data.x, y: data.y});
       if (p.history.length > 4) p.history.shift();
