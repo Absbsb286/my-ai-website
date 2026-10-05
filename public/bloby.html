@@ -225,7 +225,7 @@ function startLobbyHeartbeat(){
     else {
       try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
     }
-  }, 1000);
+  }, 500);
 }
 
 function stopLobbyHeartbeat(){
