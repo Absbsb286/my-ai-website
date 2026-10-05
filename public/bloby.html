@@ -172,7 +172,21 @@ const EMQX_WS_URL =
   'wss://blobbyuser:BlobbyJelly2026!@c616191f.ala.asia-southeast1.emqxsl.com:8084/mqtt';
 const EMQX_ROOM_CONFIG = {
   appId: 'blobby-jelly-v1',
-  relayUrls: [EMQX_WS_URL]
+  relayUrls: [EMQX_WS_URL],
+  rtcConfig: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      {
+        urls: [
+          'turn:turn.evan-brass.net:3478?transport=udp',
+          'turn:turn.evan-brass.net:3478?transport=tcp'
+        ],
+        username: 'user',
+        credential: 'password'
+      }
+    ]
+  }
 };
 
 async function loadTrystero(){
