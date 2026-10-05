@@ -280,6 +280,24 @@ async function joinRoomNet(code){
     net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();
 
+    // Room validation timeout
+    setTimeout(() => {
+      // Cek apakah ada host yang terdeteksi
+      const hasHost = Object.keys(net.players).some(
+        pid => pid !== net.myId && net.players[pid].isHost
+      );
+      
+      // Kalau tidak ada host DAN masih di scene waiting DAN belum connected
+      if (!hasHost && state === 'waiting' && !net.connected) {
+        net.status = '❌ Room tidak ditemukan. Pastikan kode benar dan host sudah membuat room.';
+        // Tunggu 2 detik supaya user baca pesan, lalu kembali ke menu
+        setTimeout(() => {
+          netCleanup();
+          setScene('mpMenu');
+        }, 2000);
+      }
+    }, 5000);
+
     net.players[net.myId] = {
       x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
       powerTimer:0, alive:true, name: myName, skin: selectedSkin,
