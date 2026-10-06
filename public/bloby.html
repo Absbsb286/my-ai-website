@@ -358,9 +358,10 @@ function setupRoomHandlers(){
     net.peerIdToPlayerId[peerId] = data.id;
     const existing = net.players[data.id];
     if (existing){
-      existing.name = data.name;
-      existing.skin = data.skin;
-      existing.isHost = data.isHost;
+      // Jangan overwrite nama/skin yang sudah benar dengan nilai kosong.
+      if (data.name && String(data.name).trim() !== '') existing.name = data.name;
+      if (data.skin && data.skin !== '') existing.skin = data.skin;
+      if (typeof data.isHost !== 'undefined') existing.isHost = data.isHost;
     } else {
       net.players[data.id] = {
         x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
