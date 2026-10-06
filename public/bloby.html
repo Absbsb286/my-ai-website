@@ -204,9 +204,16 @@ async function loadTrystero(){
   }
 }
 
-function netCleanup(){
+async function netCleanup(){
   stopLobbyHeartbeat();
-  if (net.room){ try { net.room.leave(); } catch(e){} }
+  if (net.room){
+    try {
+      await Promise.race([
+        net.room.leave(),
+        new Promise(resolve => setTimeout(resolve, 2000))
+      ]);
+    } catch(e){}
+  }
   net.room = null;
   net.actions = {};
   net.players = {};
@@ -215,6 +222,12 @@ function netCleanup(){
   net.connecting = false;
   net.isHost = false;
   net.peerIdToPlayerId = {};
+  net.roomCode = '';
+  net.status = '';
+  net.lastSend = 0;
+  // Reset module Trystero biar tidak ada state kotor dari room lama
+  // (comment dulu, bisa diaktifkan kalau perlu)
+  // net.module = null;
 }
 
 function startLobbyHeartbeat(){
