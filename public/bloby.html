@@ -220,9 +220,16 @@ function netCleanup(){
 function startLobbyHeartbeat(){
   stopLobbyHeartbeat();
   net.heartbeat = setInterval(() => {
-    if (state !== 'waiting' || !net.room){ stopLobbyHeartbeat(); return; }
-    if (net.isHost) broadcastRoster();
-    else {
+    if ((state !== 'waiting' && state !== 'race') || !net.room){ stopLobbyHeartbeat(); return; }
+    if (state === 'waiting'){
+      if (net.isHost) broadcastRoster();
+      else {
+        try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+      }
+    } else if (state === 'race'){
+      // Saat race: semua pemain (host & guest) kirim hello berkala agar nama
+      // pulih walau paket hello awal hilang (MQTT QoS 0). Mode solo tidak pakai heartbeat.
+      if (net.mode === 'solo'){ stopLobbyHeartbeat(); return; }
       try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
     }
   }, 500);
@@ -369,24 +376,42 @@ function setupRoomHandlers(){
 
   getRoster((data) => {
     if (net.isHost) return;
-    const newList = {};
+    if (!data || !Array.isArray(data.list)) return;
+    // MERGE (bukan REPLACE): jangan hapus entri lokal yang belum ada di roster host,
+    // supaya entri sendiri tidak terhapus kalau hello kita telat sampai.
     data.list.forEach(p => {
+      if (!p || !p.id) return;
       if (p.id === net.myId){
-        newList[p.id] = net.players[net.myId];
-      } else if (net.players[p.id]){
-        newList[p.id] = net.players[p.id];
-        newList[p.id].name = p.name;
-        newList[p.id].skin = p.skin;
-        newList[p.id].isHost = p.isHost;
+        // Pastikan entri sendiri tetap ada; jangan overwrite nama lokal.
+        if (!net.players[net.myId]){
+          net.players[net.myId] = {
+            x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0,
+            powerTimer:0, alive:true, name: myName, skin: selectedSkin,
+            ready:true, isMe:true, isHost:false, history: []
+          };
+        } else {
+          net.players[net.myId].isMe = true;
+        }
+        return;
+      }
+      const ex = net.players[p.id];
+      if (ex){
+        // Update identitas saja, jangan sentuh posisi/skor (getState yang menang).
+        // Jangan overwrite nama yang sudah benar dengan nilai kosong.
+        if (p.name && String(p.name).trim() !== '') ex.name = p.name;
+        if (p.skin && p.skin !== '') ex.skin = p.skin;
+        if (typeof p.isHost !== 'undefined') ex.isHost = p.isHost;
+        ex.isMe = false;
       } else {
-        newList[p.id] = {
+        net.players[p.id] = {
           x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0,
-          powerTimer:0, alive:true, name:p.name, skin:p.skin,
-          ready:true, isMe:false, isHost:p.isHost, history: []
+          powerTimer:0, alive:true,
+          name: (p.name && String(p.name).trim() !== '') ? p.name : 'Pemain',
+          skin: p.skin || 'classic',
+          ready:true, isMe:false, isHost: !!p.isHost, history: []
         };
       }
     });
-    net.players = newList;
   });
 
   getState((data) => {
@@ -413,10 +438,10 @@ function setupRoomHandlers(){
       p.coinCount = data.coinCount;
       p.powerTimer = data.powerTimer;
       p.alive = data.alive;
-      if (data.name && (p.name === 'Pemain' || !p.name)) {
+      if (data.name && String(data.name).trim() !== '') {
         p.name = data.name;
       }
-      if (data.skin && p.skin === 'classic') {
+      if (data.skin && data.skin !== '') {
         p.skin = data.skin;
       }
       if (!Array.isArray(p.history)) p.history = [];
@@ -2183,6 +2208,9 @@ function startSolo(){
 
 function startRace(isMulti){
   state = 'race';
+  // Heartbeat: lanjutkan saat race multiplayer agar hello terkirim berkala;
+  // matikan saat solo (tidak ada room).
+  if (isMulti) startLobbyHeartbeat(); else stopLobbyHeartbeat();
   raceState.phase = isMulti ? 'countdown' : 'playing';
   raceState.timeLeft = RACE_TIME;
   raceState.finalRanking = null;
