@@ -535,6 +535,7 @@ function roundRect(x,y,w,h,r){ r=Math.min(r,Math.abs(w)/2,Math.abs(h)/2);
 function pointInRect(px,py,r){ return px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h; }
 
 let state = 'menu';
+let paused = false;
 let returnState = 'menu';
 let menuT = 0, overT = 0;
 let best = 0;
@@ -592,6 +593,7 @@ function resetGame(seed){
   keys.left = keys.right = false;
   drag.active = false; btnPointerId = null;
   airJumpsLeft = 1;
+  paused = false;
 
   platforms.push({ x:0, y:H-90, w:W, h:18, type:'base', vx:0 });
   topY = H - 90;
@@ -609,6 +611,7 @@ function burst(x,y,color,n,spread){
 
 function doJump(){
   if (state !== 'race' || raceState.phase !== 'playing' || raceState.localDead) return;
+  if (paused && net.mode === 'solo') return;
   if (airJumpsLeft > 0){
     airJumpsLeft--;
     player.vy = DOUBLE_JUMP_V;
@@ -619,6 +622,7 @@ function doJump(){
 }
 
 function updateGame(dt){
+  if (paused && net.mode === 'solo') return;
   for (const p of particles){
     p.life -= dt; p.vy += 950*dt; p.vx *= (1-1.6*dt);
     p.x += p.vx*dt; p.y += p.vy*dt;
@@ -1308,8 +1312,45 @@ function drawPauseButton(){
   ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.4;
   roundRect(b.x,b.y,b.w,b.h,10); ctx.stroke();
   ctx.fillStyle = '#fff';
-  ctx.fillRect(b.x+12, b.y+11, 5, 18);
-  ctx.fillRect(b.x+23, b.y+11, 5, 18);
+  if (paused && net.mode === 'solo'){
+    ctx.beginPath();
+    ctx.moveTo(b.x+14, b.y+10);
+    ctx.lineTo(b.x+14, b.y+30);
+    ctx.lineTo(b.x+28, b.y+20);
+    ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillRect(b.x+12, b.y+11, 5, 18);
+    ctx.fillRect(b.x+23, b.y+11, 5, 18);
+  }
+  ctx.restore();
+}
+
+function togglePause(){
+  if (state !== 'race') return;
+  if (net.mode !== 'solo') return;
+  if (raceState.phase !== 'playing') return;
+  paused = !paused;
+  if (paused){
+    touchDir = 0; tapSide = 0; tapTimer = 0;
+    keys.left = keys.right = false;
+    drag.active = false; drag.id = null;
+    btnPointerId = null;
+  } else {
+    last = performance.now();
+  }
+}
+
+function drawPauseOverlay(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,8,30,0.62)';
+  ctx.fillRect(0,0,W,H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 44px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#ffe066';
+  ctx.fillText('PAUSE', W/2, H/2 - 20);
+  ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText('Tap tombol pause untuk lanjut', W/2, H/2 + 24);
   ctx.restore();
 }
 
@@ -2019,8 +2060,9 @@ function render(dt){
       drawCharacter(player.x, player.y-camY, player.w, powerTimer>0, player.sq, player.vx, selectedSkin);
     }
     drawRaceHUD();
-    if (raceState.phase === 'playing' && !raceState.localDead) drawGameButtons();
+    if (raceState.phase === 'playing' && !raceState.localDead && !(paused && net.mode === 'solo')) drawGameButtons();
     drawPowerText();
+    if (paused && net.mode === 'solo') drawPauseOverlay();
 
     if (net.mode !== 'solo' && raceState.localDead && raceState.phase !== 'ended'){
       ctx.save();
@@ -2054,7 +2096,7 @@ function loop(now){
   if (dt > 0.05) dt = 0.05;
   if (dt < 0) dt = 0;
 
-  if (state === 'race'){
+  if (state === 'race' && !(paused && net.mode === 'solo')){
     if (raceState.phase === 'countdown'){
       if (performance.now() >= raceState.startAt){
         raceState.phase = 'playing';
@@ -2097,6 +2139,10 @@ function loop(now){
 
 window.addEventListener('keydown', function(e){
   const k = e.key, c = e.code;
+  if ((k==='p'||k==='P'||k==='Escape') && state === 'race' && net.mode === 'solo'){
+    togglePause(); e.preventDefault(); return;
+  }
+  if (paused && net.mode === 'solo' && state === 'race') return;
   if (k==='ArrowLeft'||c==='ArrowLeft'||k==='a'||k==='A'||c==='KeyA') keys.left = true;
   if (k==='ArrowRight'||c==='ArrowRight'||k==='d'||k==='D'||c==='KeyD') keys.right = true;
 
@@ -2270,6 +2316,14 @@ canvas.addEventListener('pointerdown', function(e){
       showResult(raceState.finalRanking);
       return;
     }
+    // Cek tombol Pause (hanya mode solo, sebelum cek tombol lain)
+    if (net.mode === 'solo' && pointInRect(lx,ly,PAUSE_BTN)){
+      if (raceState.phase === 'playing' && !raceState.localDead){
+        togglePause(); sfxToggle(); haptic(15);
+      }
+      return;
+    }
+    if (paused && net.mode === 'solo') return;
     if (raceState.localDead) return;
     if (raceState.phase !== 'playing') return;
 
@@ -2319,6 +2373,7 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 let lastTapTime = 0;
 canvas.addEventListener('touchstart', e => {
   if (state !== 'race' || raceState.phase !== 'playing' || raceState.localDead) return;
+  if (paused && net.mode === 'solo') return;
   const now = Date.now();
   if (now - lastTapTime < 280){ doJump(); e.preventDefault(); }
   lastTapTime = now;
