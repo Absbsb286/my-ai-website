@@ -254,7 +254,7 @@ function stopLobbyHeartbeat(){
 
 async function createRoom(){
   if (net.connecting) return;
-  netCleanup();
+  await netCleanup();
   net.mode = 'host';
   net.isHost = true;
   net.connecting = true;
