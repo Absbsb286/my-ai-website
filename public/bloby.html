@@ -347,9 +347,10 @@ function setupRoomHandlers(){
   const [sendHello, getHello]       = room.makeAction('hello');
   const [sendState, getState]       = room.makeAction('state');
   const [sendStart, getStart]       = room.makeAction('start');
+  const [sendStartAck, getStartAck] = room.makeAction('startAck');
   const [sendOver, getOver]         = room.makeAction('over');
   const [sendRoster, getRoster]     = room.makeAction('roster');
-  net.actions = { sendHello, sendState, sendStart, sendOver, sendRoster };
+  net.actions = { sendHello, sendState, sendStart, sendStartAck, sendOver, sendRoster };
 
   room.onPeerJoin((peerId) => {
     try { sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}, peerId); } catch(e){}
