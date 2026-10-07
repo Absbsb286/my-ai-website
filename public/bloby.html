@@ -2257,9 +2257,18 @@ function hostStartRace(){
     const p = net.players[pid];
     p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
   });
-  try { net.actions.sendStart({seed, delay}); } catch(e){}
-  setTimeout(() => { try { net.actions.sendStart({seed, delay}); } catch(e){} }, 300);
-  setTimeout(() => { try { net.actions.sendStart({seed, delay}); } catch(e){} }, 600);
+  // Kirim start berkala sampai semua guest ACK atau 5 detik (FIX guest stuck).
+  // Alasan: pesan 'start' via MQTT QoS 0 bisa hilang kalau channel guest belum siap.
+  if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
+  net._startAckCount = 0;
+  net._startExpected = Math.max(0, Object.keys(net.players).length - 1);
+  const sendStartOnce = () => { try { net.actions.sendStart({seed, delay}); } catch(e){} };
+  sendStartOnce();
+  net._startInterval = setInterval(() => {
+    sendStartOnce();
+    if (net._startAckCount >= net._startExpected){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
+  }, 500);
+  setTimeout(() => { if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; } }, 5000);
   setSeed(seed);
   raceState.startAt = performance.now() + delay;
   startRace(true);
