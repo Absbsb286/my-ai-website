@@ -431,6 +431,16 @@ function setupRoomHandlers(){
 
   getState((data) => {
     if (data.id === net.myId) return;
+    // FIX guest stuck: kalau guest masih di lobby tapi host sudah main (state alive),
+    // paksa masuk race agar tidak stuck di "Menunggu host memulai..." selamanya.
+    if (!net.isHost && state === 'waiting' && data.alive) {
+      if (raceState.phase !== 'playing') {
+        raceState.phase = 'playing';
+        raceState.timeLeft = RACE_TIME;
+        state = 'race';
+        startLobbyHeartbeat();
+      }
+    }
     let p = net.players[data.id];
     if (!p){
       p = {
