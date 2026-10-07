@@ -467,10 +467,18 @@ function setupRoomHandlers(){
 
   getStart((data) => {
     if (net.isHost) return;
-    if (raceState.phase !== 'idle') return;
+    // Izinkan race ke-2: guest di lobby 'waiting' boleh terima start walau phase masih 'ended' dari race sebelumnya.
+    if (raceState.phase !== 'idle' && state !== 'waiting') return;
+    if (!data || typeof data.seed === 'undefined') return;
     setSeed(data.seed);
     raceState.startAt = performance.now() + data.delay;
     startRace(true);
+    try { net.actions.sendStartAck({id: net.myId}); } catch(e){}
+  });
+
+  getStartAck((data) => {
+    if (!net.isHost) return;
+    net._startAckCount = (net._startAckCount || 0) + 1;
   });
 
   getOver((data) => {
