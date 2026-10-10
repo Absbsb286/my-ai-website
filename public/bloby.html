@@ -233,6 +233,16 @@ async function netCleanup(){
   net.roomCode = '';
   net.status = '';
   net.lastSend = 0;
+  // STEP 2/3/4/5: bersihkan state sinkronisasi & timer.
+  net.pendingOver = false;
+  net.peerSeen = false;
+  net.hostTimeLeft = null;
+  net.hostTimeAt = 0;
+  net.clockOffset = null;
+  net._timeAcc = 0;
+  net._pingN = 0;
+  if (net._overTimer){ try{ clearTimeout(net._overTimer); }catch(e){} net._overTimer = null; }
+  if (net._connTimer){ try{ clearInterval(net._connTimer); }catch(e){} net._connTimer = null; }
   // Reset module Trystero biar tidak ada state kotor dari room lama
   // (comment dulu, bisa diaktifkan kalau perlu)
   // net.module = null;
@@ -252,6 +262,11 @@ function startLobbyHeartbeat(){
       // pulih walau paket hello awal hilang (MQTT QoS 0). Mode solo tidak pakai heartbeat.
       if (net.mode === 'solo'){ stopLobbyHeartbeat(); return; }
       try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+    }
+    // STEP 5 (#4): ping clock-sync tiap ~2 dtk (guest saja).
+    if (!net.isHost && net.actions.sendPing){
+      net._pingN = (net._pingN || 0) + 1;
+      if (net._pingN % 4 === 0){ try { net.actions.sendPing({t0: performance.now()}); } catch(e){} }
     }
   }, 500);
 }
@@ -281,11 +296,22 @@ async function createRoom(){
       ready:true, isMe:true, isHost:true
     };
 
-    setTimeout(() => {
-      net.connected = true;
-      net.connecting = false;
-      net.status = '';
-    }, 600);
+    // STEP 6 (#6): hello segera (tanpa tunggu), bukan cuma saat peer join.
+    try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: true}); } catch(e){}
+    // STEP 3 (#5): host "connected" hanya kalau ada peer/hello nyata,
+    // atau setelah 3 dtk (signaling warm-up) — bukan klaim buta 600ms.
+    let waited = 0;
+    net._connTimer = setInterval(() => {
+      waited += 300;
+      if (net.peerSeen || waited >= 3000){
+        try{ clearInterval(net._connTimer); }catch(e){} net._connTimer = null;
+        if (state === 'waiting' && net.isHost){
+          net.connected = true;
+          net.connecting = false;
+          net.status = '';
+        }
+      }
+    }, 300);
   } catch(e){
     net.status = 'Error: ' + e.message;
     net.connecting = false;
@@ -332,17 +358,13 @@ async function joinRoomNet(code){
       ready:true, isMe:true, isHost:false
     };
 
+    // STEP 6 (#6): hello segera + ulangan 400ms (QoS 0 bisa hilang).
+    try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: false}); } catch(e){}
     setTimeout(() => {
       try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: false}); } catch(e){}
     }, 400);
-
-    setTimeout(() => {
-      if (!net.connected){
-        net.connected = true;
-        net.connecting = false;
-        net.status = '';
-      }
-    }, 6000);
+    // STEP 3 (#5): HAPUS fallback buta 6 detik. Validasi nyata hanya via
+    // hello/roster (lihat getHello/getRoster) + cek 5 detik di atas.
   } catch(e){
     net.status = 'Error: ' + e.message;
     net.connecting = false;
@@ -358,9 +380,17 @@ function setupRoomHandlers(){
   const [sendStartAck, getStartAck] = room.makeAction('startAck');
   const [sendOver, getOver]         = room.makeAction('over');
   const [sendRoster, getRoster]     = room.makeAction('roster');
-  net.actions = { sendHello, sendState, sendStart, sendStartAck, sendOver, sendRoster };
+  // STEP 2 (#1): minta state final sebelum ranking. STEP 4 (#3): timeSync.
+  // STEP 5 (#4): ping/pong untuk clock sync.
+  const [sendFinalReq, getFinalReq] = room.makeAction('requestFinalState');
+  const [sendTime, getTime]         = room.makeAction('timeSync');
+  const [sendPing, getPing]         = room.makeAction('ping');
+  const [sendPong, getPong]         = room.makeAction('pong');
+  net.actions = { sendHello, sendState, sendStart, sendStartAck, sendOver,
+    sendRoster, sendFinalReq, sendTime, sendPing, sendPong };
 
   room.onPeerJoin((peerId) => {
+    net.peerSeen = true; // STEP 3 (#5): bukti nyata ada peer
     try { sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}, peerId); } catch(e){}
     if (net.isHost){
       setTimeout(() => { try { sendRoster({list: rosterList()}, peerId); } catch(e){} }, 200);
@@ -377,6 +407,7 @@ function setupRoomHandlers(){
   });
 
   getHello((data, peerId) => {
+    net.peerSeen = true; // STEP 3 (#5): bukti nyata ada peer
     net.peerIdToPlayerId[peerId] = data.id;
     const existing = net.players[data.id];
     if (existing){
@@ -400,6 +431,12 @@ function setupRoomHandlers(){
   getRoster((data) => {
     if (net.isHost) return;
     if (!data || !Array.isArray(data.list)) return;
+    // STEP 3 (#5): roster berisi = bukti nyata room hidup.
+    if (data.list.length > 0){
+      net.connected = true;
+      net.connecting = false;
+      net.status = '';
+    }
     // MERGE (bukan REPLACE): jangan hapus entri lokal yang belum ada di roster host,
     // supaya entri sendiri tidak terhapus kalau hello kita telat sampai.
     data.list.forEach(p => {
@@ -489,7 +526,10 @@ function setupRoomHandlers(){
     if (raceState.phase !== 'idle' && state !== 'waiting') return;
     if (!data || typeof data.seed === 'undefined') return;
     setSeed(data.seed);
-    raceState.startAt = performance.now() + data.delay;
+    // STEP 5 (#4): pakai jam host + offset; fallback jam lokal.
+    raceState.startAt = (typeof data.startAtHost === 'number')
+      ? data.startAtHost + (net.clockOffset || 0)
+      : performance.now() + data.delay;
     startRace(true);
     try { net.actions.sendStartAck({id: net.myId}); } catch(e){}
   });
@@ -503,6 +543,37 @@ function setupRoomHandlers(){
     if (net.isHost) return;
     raceState.phase = 'ended';
     showResult(data.ranking);
+  });
+
+  // STEP 2 (#1): guest kirim state final saat diminta host.
+  getFinalReq(() => {
+    if (net.isHost) return;
+    if (state !== 'race') return;
+    try { broadcastState(); } catch(e){}
+  });
+
+  // STEP 4 (#3): guest simpan timeLeft otoritatif host + waktu terima.
+  getTime((data) => {
+    if (net.isHost) return;
+    if (!data || typeof data.t !== 'number') return;
+    net.hostTimeLeft = data.t;
+    net.hostTimeAt = performance.now();
+  });
+
+  // STEP 5 (#4): host balas ping dengan timestamp host.
+  getPing((data) => {
+    if (!net.isHost) return;
+    if (!data || typeof data.t0 !== 'number') return;
+    try { net.actions.sendPong({t0: data.t0, t1: performance.now()}); } catch(e){}
+  });
+
+  // STEP 5 (#4): guest hitung clock offset (rata-rata bergerak).
+  getPong((data) => {
+    if (net.isHost) return;
+    if (!data || typeof data.t0 !== 'number' || typeof data.t1 !== 'number') return;
+    const now = performance.now();
+    const off = data.t1 - (data.t0 + (now - data.t0)/2);
+    net.clockOffset = (net.clockOffset == null) ? off : net.clockOffset*0.7 + off*0.3;
   });
 }
 
@@ -844,29 +915,37 @@ function checkHostEndCondition(){
   }
 }
 
+// STEP 2 (#1): grace period 500ms — minta state final semua guest dulu
+// supaya lompatan/koin detik terakhir ikut kehitung di ranking.
 function endRaceHost(){
-  if (raceState.phase === 'ended') return;
-  raceState.phase = 'ended';
-  stopMusic();
+  if (raceState.phase === 'ended' || net.pendingOver) return;
+  net.pendingOver = true;
+  try { net.actions.sendFinalReq({}); } catch(e){}
+  net._overTimer = setTimeout(() => {
+    net.pendingOver = false;
+    if (raceState.phase === 'ended') return;
+    raceState.phase = 'ended';
+    stopMusic();
 
-  const arr = Object.keys(net.players).map(pid => ({
-    id: pid, name: net.players[pid].name, skin: net.players[pid].skin,
-    score: net.players[pid].score, alive: net.players[pid].alive
-  }));
-  arr.sort((a,b) => {
-    if (a.alive !== b.alive) return b.alive - a.alive;
-    return b.score - a.score;
-  });
+    const arr = Object.keys(net.players).map(pid => ({
+      id: pid, name: net.players[pid].name, skin: net.players[pid].skin,
+      score: net.players[pid].score, alive: net.players[pid].alive
+    }));
+    arr.sort((a,b) => {
+      if (a.alive !== b.alive) return b.alive - a.alive;
+      return b.score - a.score;
+    });
 
-  const ranking = arr.map((p,i) => {
-    let bonus = 0;
-    if (p.alive) bonus += BONUS_LAST_STANDING;
-    if (i === 0) bonus += BONUS_WINNER;
-    return { ...p, rank: i+1, bonus };
-  });
+    const ranking = arr.map((p,i) => {
+      let bonus = 0;
+      if (p.alive) bonus += BONUS_LAST_STANDING;
+      if (i === 0) bonus += BONUS_WINNER;
+      return { ...p, rank: i+1, bonus };
+    });
 
-  try { net.actions.sendOver({ranking}); } catch(e){}
-  showResult(ranking);
+    try { net.actions.sendOver({ranking}); } catch(e){}
+    showResult(ranking);
+  }, 500);
 }
 
 function showResult(ranking){
@@ -2816,8 +2895,22 @@ function loop(now){
         raceState.phase = 'playing';
       }
     }
+    // STEP 4 (#3): hanya host yang decrement; guest ikut jam host
+    // (snap bila data segar <1.5 dtk, fallback lokal bila paket putus).
     if (raceState.phase === 'playing' && net.mode !== 'solo'){
-      raceState.timeLeft -= dt;
+      if (net.isHost){
+        raceState.timeLeft -= dt;
+        // Siaran timeSync tiap 1 detik.
+        net._timeAcc = (net._timeAcc || 0) + dt;
+        if (net._timeAcc >= 1){
+          net._timeAcc = 0;
+          try { net.actions.sendTime({t: raceState.timeLeft}); } catch(e){}
+        }
+      } else if (net.hostTimeLeft != null && performance.now()-net.hostTimeAt < 1500){
+        raceState.timeLeft = Math.max(0, net.hostTimeLeft - (performance.now()-net.hostTimeAt)/1000);
+      } else {
+        raceState.timeLeft -= dt;
+      }
       if (raceState.timeLeft <= 0){
         raceState.timeLeft = 0;
         if (net.isHost) endRaceHost();
@@ -2936,7 +3029,9 @@ function hostStartRace(){
   if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
   net._startAckCount = 0;
   net._startExpected = Math.max(0, Object.keys(net.players).length - 1);
-  const sendStartOnce = () => { try { net.actions.sendStart({seed, delay}); } catch(e){} };
+  // STEP 5 (#4): startAt dari jam host supaya countdown sinkron.
+  const startAtHost = performance.now() + delay;
+  const sendStartOnce = () => { try { net.actions.sendStart({seed, delay, startAtHost}); } catch(e){} };
   sendStartOnce();
   net._startInterval = setInterval(() => {
     sendStartOnce();
@@ -2944,7 +3039,7 @@ function hostStartRace(){
   }, 500);
   setTimeout(() => { if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; } }, 5000);
   setSeed(seed);
-  raceState.startAt = performance.now() + delay;
+  raceState.startAt = startAtHost;
   startRace(true);
 }
 
