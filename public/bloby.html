@@ -248,12 +248,13 @@ function startLobbyHeartbeat(){
         try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
       }
     } else if (state === 'race'){
-      // Saat race: semua pemain (host & guest) kirim hello berkala agar nama
-      // pulih walau paket hello awal hilang (MQTT QoS 0). Mode solo tidak pakai heartbeat.
+      // Saat race: semua pemain kirim hello berkala agar nama pulih walau
+      // paket hello awal hilang (MQTT QoS 0). Interval 2 dtk cukup —
+      // identitas per-tick sudah dihemat via broadcastState.
       if (net.mode === 'solo'){ stopLobbyHeartbeat(); return; }
       try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
     }
-  }, 500);
+  }, 2000);
 }
 
 function stopLobbyHeartbeat(){
@@ -479,7 +480,7 @@ function setupRoomHandlers(){
       }
       if (!Array.isArray(p.history)) p.history = [];
       p.history.push({t: performance.now(), x: data.x, y: data.y});
-      if (p.history.length > 4) p.history.shift();
+      if (p.history.length > 6) p.history.shift(); // ~200ms cakupan di 30Hz
     }
   });
 
@@ -524,14 +525,17 @@ function broadcastRoster(){
 function broadcastState(){
   if (!net.actions.sendState) return;
   try {
-    net.actions.sendState({
+    // name/skin hanya ikut saat berubah (identitas rutin via hello/roster).
+    // Paket tick 30Hz jadi lebih ramping -> jitter berkurang di jaringan lemot.
+    const pkt = {
       id: net.myId,
       x: player.x, y: player.y, vx: player.vx, vy: player.vy,
       score: score, coinCount: coinCount, powerTimer: powerTimer,
-      alive: !raceState.localDead && raceState.phase === 'playing',
-      name: myName,
-      skin: selectedSkin
-    });
+      alive: !raceState.localDead && raceState.phase === 'playing'
+    };
+    if (myName !== net._lastSentName){ pkt.name = myName; net._lastSentName = myName; }
+    if (selectedSkin !== net._lastSentSkin){ pkt.skin = selectedSkin; net._lastSentSkin = selectedSkin; }
+    net.actions.sendState(pkt);
   } catch(e){}
 }
 
@@ -654,6 +658,7 @@ function resetGame(seed){
   player = { x: W/2, y: START_Y, vx:0, vy:0, w:46, h:46, sq:1 };
   platforms = []; coins = []; particles = [];
   camY = 0; coinCount = 0; coinsTotal = 0; powerTimer = 0; powerTextTimer = 0;
+  cloudSeed = Math.random()*100; // tata awan beda tiap run
   score = 0; maxReach = START_Y; flash = 0; shake = 0;
   touchDir = 0; tapTimer = 0; tapSide = 0;
   keys.left = keys.right = false;
@@ -900,15 +905,16 @@ function updateRemotePlayers(){}
    Keyframe warna satu keluarga Midnight (ink/amber/mint),
    interpolasi linear antar keyframe supaya transisi halus.
    ============================================================ */
-/* B1.3 revisi (Hallmark): timeline diperlambat — terang hingga 1000,
-   senja 1000-2000, gelap 2000-3000, hitam 3000-4000, space 4000+. */
+/* B1.3 revisi (Hallmark): timeline diperlambat — terang hingga 1800,
+   senja 1800-2600, gelap 2600-3400, hitam 3400-4500, space 5500+.
+   Awan penuh ikut diperlama agar fase langit terang bisa dinikmati. */
 const SKY_KEYS = [
   { h:0,    label:'ground', star:0,    top:[80,135,215],  mid:[120,170,230], bot:[180,205,240] },
-  { h:1000, label:'low',    star:0,    top:[85,130,210],  mid:[125,160,225], bot:[200,190,200] },
-  { h:1500, label:'dusk',   star:0.08, top:[70,70,150],   mid:[150,110,170], bot:[235,160,130] },
-  { h:2000, label:'high',   star:0.25, top:[40,40,110],   mid:[90,70,150],   bot:[170,110,150] },
-  { h:3000, label:'edge',   star:0.7,  top:[14,16,44],    mid:[30,28,72],    bot:[70,55,100] },
-  { h:4000, label:'space',  star:1,    top:[4,5,14],      mid:[8,9,24],      bot:[18,16,40] }
+  { h:1800, label:'low',    star:0,    top:[85,130,210],  mid:[125,160,225], bot:[200,190,200] },
+  { h:2600, label:'dusk',   star:0.08, top:[70,70,150],   mid:[150,110,170], bot:[235,160,130] },
+  { h:3400, label:'high',   star:0.25, top:[40,40,110],   mid:[90,70,150],   bot:[170,110,150] },
+  { h:4500, label:'edge',   star:0.7,  top:[14,16,44],    mid:[30,28,72],    bot:[70,55,100] },
+  { h:5500, label:'space',  star:1,    top:[4,5,14],      mid:[8,9,24],      bot:[18,16,40] }
 ];
 // Interpolasi satu channel warna
 function lerp3(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
@@ -987,20 +993,22 @@ function drawStars(opacity){
 /* B1.3 (Hallmark+Impeccable): urutan sesuai jarak dari Bumi, tiap
    planet punya zona [visibleFrom, visibleTo] dengan mood warna unik
    dalam satu keluarga Midnight. Glow TIDAK diubah di sini (B1.6). */
-/* B1.3 revisi: tiap planet punya SEGMEN sendiri + jeda 200 antar
-   planet (tidak tumpang tindih). Tiap segmen 800: terbit 200,
-   penuh 400, terbenam 200. */
+/* B1.3 revisi 3: tiap planet SEGMEN 2200 + overlap 200 antar
+   planet (tidak ada langit kosong). Terbit 400, penuh 1400,
+   terbenam 400 — tiap planet bisa dinikmati lama.
+   Venus menyambung langsung dari Bumi (6800), Saturnus crossfade
+   ke galaksi (14800). */
 const PLANETS = [
   { name:'Venus',   color:'#D9B36A', dark:'#8A6530', light:'#F5E2B0',
-    visibleFrom:4000, visibleTo:4800, size:12, xRatio:0.7,  yRatio:0.3, glow:false, swirls:true },
+    visibleFrom:6800, visibleTo:9000, size:12, xRatio:0.7,  yRatio:0.3, glow:false, swirls:true },
   { name:'Mars',    color:'#C1440E', dark:'#7A2A0A', light:'#E8804F',
-    visibleFrom:5000, visibleTo:5800, size:10, xRatio:0.15, yRatio:0.28, glow:false },
+    visibleFrom:8800, visibleTo:11000, size:10, xRatio:0.15, yRatio:0.28, glow:false },
   { name:'Jupiter', color:'#D4A574', dark:'#8A6238', light:'#F0D0A0',
-    visibleFrom:6000, visibleTo:6800, size:18, xRatio:0.78, yRatio:0.34, bands:true, glow:true },
+    visibleFrom:10800, visibleTo:13000, size:18, xRatio:0.78, yRatio:0.34, bands:true, glow:true },
   { name:'Saturn',  color:'#E8D4A0', dark:'#9A7F4E', light:'#FFF2CC',
-    visibleFrom:7000, visibleTo:7800, size:20, xRatio:0.35, yRatio:0.22, hasRing:true, glow:true }
+    visibleFrom:12800, visibleTo:15000, size:20, xRatio:0.35, yRatio:0.22, hasRing:true, glow:true }
 ];
-const PLANET_RISE = 200, PLANET_SET = 200; // panjang fase terbit/terbenam
+const PLANET_RISE = 400, PLANET_SET = 400; // panjang fase terbit/terbenam
 // Easing halus untuk gerak terbit/terbenam (Impeccable)
 function easeInOutQuad(t){ t = clamp(t,0,1); return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 // State machine per planet: waiting|rising|active|setting|done
@@ -1097,19 +1105,20 @@ function drawPlanets(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP B1.4: galaksi (zona h 6500-8200)
+   SKY SYSTEM — STEP B1.4: galaksi (zona h 14800-19000)
    Impeccable: Milky Way berlapis + noise deterministik (bukan
    satu gradient malas), Andromeda punya kedalaman, bintang
    galaksi ikut twinkle halus.
    ============================================================ */
-/* B1.4 revisi: galaksi penuh 8000-9000, terbenam 9000-10000. */
-const GALAXY_FROM = 8000, GALAXY_TO = 10000, GALAXY_FADE = 500;
-/* B1.4: nebula redup di belakang planet — samar sejak 4000-an,
-   makin jelas tiap segmen, ikut terbenam bersama galaksi. */
+/* B1.4 revisi 3: galaksi digeser ikut timeline (penuh 14800-18200,
+   terbenam 18200-19000, overlap dengan black hole). */
+const GALAXY_FROM = 14800, GALAXY_TO = 19000, GALAXY_FADE = 800;
+/* B1.4 revisi 3: nebula redup menemani sejak 4000, bertahan sepanjang
+   planet + galaksi, baru terbenam 19000-20000. */
 function nebulaAlpha(h){
-  if (h < 4000 || h > 10000) return 0;
+  if (h < 4000 || h > 20000) return 0;
   return Math.min(clamp((h-4000)/4000,0,1)*0.5+0.08,
-                  clamp((10000-h)/500,0,1));
+                  clamp((20000-h)/1000,0,1));
 }
 function drawNebulaBack(h){
   const a = nebulaAlpha(h);
@@ -1129,8 +1138,9 @@ function drawNebulaBack(h){
   }
   ctx.restore();
 }
-/* B1.4: Bumi + aurora di horizon (zona 3300-4100, puncak 3500-4000). */
-const EARTH_FROM = 3300, EARTH_TO = 4100, EARTH_FADE = 400;
+/* B1.4 revisi 3: Bumi + aurora diperlama lagi —
+   zona 4500-6800 (window 2300), fade 600/600, full ~1100. */
+const EARTH_FROM = 4500, EARTH_TO = 6800, EARTH_FADE = 600;
 function drawEarth(h){
   if (h < EARTH_FROM || h > EARTH_TO) return;
   const a = Math.min(clamp((h-EARTH_FROM)/EARTH_FADE,0,1),
@@ -1247,41 +1257,75 @@ function drawGalaxies(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP B1.5: black hole (h >= 8000, objek terakhir)
+   SKY SYSTEM — STEP B1.5: black hole (h >= 18200, evolving endgame)
    Impeccable+Halmark: accretion disk gradient amber->coral dari
    palette terkunci, photon ring tipis, distorsi hanya lengkung
    bintang samar — subtle, tidak norak.
    ============================================================ */
-/* B1.5 revisi (timeline lambat): black hole objek terakhir di 10000+. */
-const BLACK_HOLE_FROM = 10000, BLACK_HOLE_FADE = 600;
+/* B1.5 revisi 3 (timeline + endgame hidup): black hole masuk
+   di 18200 (overlap dengan ekor galaksi), lalu TERUS berevolusi
+   sedalam apa pun pemain naik —
+   membesar logaritmik, debris bertambah, nebula dalam berganti hue,
+   warp streak memanjang. Skor 3000 vs 8000 vs 13000 terlihat beda. */
+const BLACK_HOLE_FROM = 18200, BLACK_HOLE_FADE = 800;
 function drawBlackHole(h){
   h = Math.max(0, h || 0);
   if (h < BLACK_HOLE_FROM) return;
   const a = clamp((h-BLACK_HOLE_FROM)/BLACK_HOLE_FADE, 0, 1);
   if (a <= 0.01) return;
-  const px = W*0.5, py = H*0.38, rHole = 22, rDisk = 46;
+  // Kedalaman di luar fase fade-in: 0 saat baru penuh, membesar terus.
+  // Kurva 1-exp agar selalu berubah (asimtotik, tak pernah statis).
+  const bhT = Math.max(0, h-(BLACK_HOLE_FROM+BLACK_HOLE_FADE));
+  const grow = 60*(1-Math.exp(-bhT/25000));
+  const now = performance.now()*0.001;
+  // Nebula dalam: muncul setelah black hole penuh, hue violet<->teal
+  // bersiklus terhadap kedalaman — langit terus berganti.
+  const deepA = a*Math.min(0.5, bhT/8000*0.5);
+  if (deepA > 0.01){
+    const mix = 0.5+0.5*Math.sin(bhT*0.00012);
+    const c1 = '150,110,200', c2 = '90,180,190';
+    const blobs = [
+      { x:0.18, y:0.28, r:170, c: mix > 0.5 ? c1 : c2 },
+      { x:0.82, y:0.6,  r:200, c: mix > 0.5 ? c2 : c1 },
+      { x:0.5,  y:0.85, r:150, c: c1 }
+    ];
+    ctx.save();
+    for (const b of blobs){
+      const g = ctx.createRadialGradient(b.x*W,b.y*H,0, b.x*W,b.y*H,b.r);
+      g.addColorStop(0, 'rgba(' + b.c + ',' + (0.22*deepA).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(' + b.c + ',0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
+  const px = W*0.5, py = H*0.38, rHole = 22+grow, rDisk = 46+grow*1.6;
+  // Kemiringan disk bergoyang pelan terhadap kedalaman (lensing hidup)
+  const tilt = -0.3 + Math.sin(bhT*0.00008)*0.08;
   ctx.save();
   ctx.globalAlpha = a;
-  ctx.translate(px, py); ctx.rotate(-0.3);
-  // Distorsi: lengkung cahaya bintang di sekitar lubang (samar)
+  ctx.translate(px, py); ctx.rotate(tilt);
+  // Distorsi: lengkung cahaya bintang di sekitar lubang (ikut membesar)
   ctx.strokeStyle = 'rgba(200,205,235,0.18)'; ctx.lineWidth = 1.2;
   for (let k=0;k<3;k++){
     const rr = rDisk + 10 + k*9;
     ctx.beginPath(); ctx.ellipse(0, 0, rr, rr*0.42, 0, 0.4, 2.4); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(0, 0, rr, rr*0.42, 0, Math.PI+0.4, Math.PI+2.4); ctx.stroke();
   }
-  // Accretion disk: cincin dengan gradient amber->coral (evenodd)
+  // Accretion disk: cincin dengan gradient amber->coral (evenodd).
+  // Denyut terhadap kedalaman supaya tak terasa beku.
+  const pulse = 0.85 + 0.15*Math.sin(bhT*0.001 + now*1.5);
   const dg = ctx.createLinearGradient(-rDisk, 0, rDisk, 0);
-  dg.addColorStop(0, 'rgba(255,208,46,0.95)');
-  dg.addColorStop(0.55, 'rgba(255,150,60,0.85)');
-  dg.addColorStop(1, 'rgba(255,107,107,0.95)');
+  dg.addColorStop(0, 'rgba(255,208,46,' + (0.95*pulse).toFixed(3) + ')');
+  dg.addColorStop(0.55, 'rgba(255,150,60,' + (0.85*pulse).toFixed(3) + ')');
+  dg.addColorStop(1, 'rgba(255,107,107,' + (0.95*pulse).toFixed(3) + ')');
   ctx.fillStyle = dg;
   ctx.beginPath();
   ctx.ellipse(0, 0, rDisk, rDisk*0.38, 0, 0, 6.283);
   ctx.ellipse(0, 0, rHole+4, (rHole+4)*0.38, 0, 0, 6.283);
   ctx.fill('evenodd');
   // Sisi bawah disk lebih terang (lensing depan lubang)
-  ctx.fillStyle = 'rgba(255,240,200,0.35)';
+  ctx.fillStyle = 'rgba(255,240,200,' + (0.35*pulse).toFixed(3) + ')';
   ctx.beginPath();
   ctx.ellipse(0, 0, rDisk, rDisk*0.38, 0, 0.15*Math.PI, 0.85*Math.PI);
   ctx.ellipse(0, 0, rHole+4, (rHole+4)*0.38, 0, 0.85*Math.PI, 0.15*Math.PI, true);
@@ -1297,6 +1341,40 @@ function drawBlackHole(h){
   ctx.strokeStyle = 'rgba(255,226,122,0.9)'; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.arc(px, py, rHole+1.5, 0, 6.283); ctx.stroke();
   ctx.restore();
+  // Puing orbit: makin dalam makin banyak + makin cepat.
+  // Deterministik per index (hash), sudut hanyut oleh waktu + kedalaman.
+  const nDebris = Math.min(36, 14 + Math.floor(bhT/4000));
+  const dA = a*Math.min(1, bhT/3000 + 0.25);
+  if (dA > 0.02){
+    ctx.save();
+    for (let i=0;i<nDebris;i++){
+      const rr = rDisk + 14 + hash(i*13.3+91)*70;
+      const ang = hash(i*7.1+17)*6.283 + now*(0.25+hash(i*3.9+5)*0.5) + bhT*0.00003;
+      const dx = px + Math.cos(ang)*rr, dy = py + Math.sin(ang)*rr*0.42;
+      if (dx < -10 || dx > W+10 || dy < -10 || dy > H+10) continue;
+      ctx.globalAlpha = dA*(0.3+hash(i*5.5+31)*0.5);
+      ctx.fillStyle = hash(i*9.2+13) > 0.6 ? 'rgba(255,226,122,1)' : 'rgba(235,238,255,1)';
+      ctx.beginPath(); ctx.arc(dx, dy, 0.6+hash(i*4.4+7)*1.3, 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // Warp streak: garis vertikal samar yang memanjang terhadap kedalaman
+  // (sensasi jatuh makin dalam). Baru muncul di h > 20000.
+  if (h > 20000){
+    const wA = a*Math.min(0.28, (h-20000)/30000*0.28);
+    if (wA > 0.01){
+      const len = Math.min(120, 10 + Math.log10(Math.max(1,bhT))*30);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(200,210,245,1)'; ctx.lineWidth = 1;
+      for (let i=0;i<20;i++){
+        const sx = hash(i*17.3+3)*W;
+        const sy = ((hash(i*11.7+9)*(H+len*2) - camY*0.35) % (H+len*2) + (H+len*2)) % (H+len*2) - len;
+        ctx.globalAlpha = wA*(0.4+hash(i*6.1+21)*0.6);
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy+len); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -1306,12 +1384,12 @@ function drawBlackHole(h){
    Pakai Math.random (BUKAN rng()) supaya tidak menggeser
    sequence platform yang memakai seeded RNG.
    ============================================================ */
-// B1.3 revisi: rentang event ikut timeline baru (atmosfer melambat).
+// B1.3 revisi 2: rentang event ikut timeline baru (langit terang diperlama).
 const SKY_EVENT_DEFS = [
-  { minH:0,    maxH:500,   type:'paraglider', speed:2,  yOffset:0.3, chance:0.01,  size:0.5 },
-  { minH:0,    maxH:600,   type:'bird',       speed:4,  yOffset:0.25, chance:0.012, size:0.5 },
-  { minH:500,  maxH:1500,  type:'plane',      speed:6,  yOffset:0.4, chance:0.006, size:0.8 },
-  { minH:1000, maxH:1800,  type:'balloon',    speed:1.5,yOffset:0.3, chance:0.005, size:0.6 },
+  { minH:0,    maxH:800,   type:'paraglider', speed:2,  yOffset:0.3, chance:0.01,  size:0.5 },
+  { minH:0,    maxH:900,   type:'bird',       speed:4,  yOffset:0.25, chance:0.012, size:0.5 },
+  { minH:500,  maxH:3200,  type:'plane',      speed:6,  yOffset:0.4, chance:0.006, size:0.8 },
+  { minH:1000, maxH:3400,  type:'balloon',    speed:1.5,yOffset:0.3, chance:0.005, size:0.6 },
   { minH:2500, maxH:99999, type:'meteor',     speed:15, yOffset:0.5, chance:0.02,  size:0.4 },
   { minH:3000, maxH:99999, type:'satellite',  speed:10, yOffset:0.2, chance:0.01,  size:0.5 },
   { minH:3200, maxH:99999, type:'debris',     speed:8,  yOffset:0.6, chance:0.015, size:0.3 }
@@ -1320,6 +1398,9 @@ const MAX_SKY_EVENTS = 3;   // batas anti-spam
 const SKY_EVENT_COOLDOWN = 5; // detik antar spawn per tipe
 let skyEventList = [];
 let skyEventCooldown = {};
+// Seed tata letak awan — diacak tiap game (pakai Math.random, BUKAN rng,
+// supaya sequence platform yang memakai seeded RNG tidak tergeser).
+let cloudSeed = 0;
 // Spawn satu event dari tepi layar acak (kiri/kanan)
 function spawnSkyEvent(def){
   const fromLeft = Math.random() < 0.5;
@@ -1462,7 +1543,7 @@ function drawSkyEvent(ev){
 
 function drawBackground(dt){
   updateSkyEvents(dt || 0.016);
-  const t = clamp(-camY/9000, 0, 1);
+  const t = clamp(-camY/14000, 0, 1);
   const sky = getSkyLayer(-camY);
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0, rgbStr(sky.top));
@@ -1479,14 +1560,17 @@ function drawBackground(dt){
   // fade-out halus 400-500, hilang total di h>=500. Warna tetap token
   // Midnight yang terkunci (putih kebiruan desaturasi), tanpa hue baru.
   const hCloud = Math.max(0, -camY);
-  // B1.2 revisi (Hallmark): penuh h<800, fade 800-1000, hilang >=1000.
-  const cloudFade = hCloud < 800 ? 1 : (hCloud < 1000 ? 1-(hCloud-800)/200 : 0);
+  // B1.2 revisi 3: awan penuh sampai skor ~350 (h<3300),
+  // fade 3300-3600, hilang >=3600. Posisi diacak per game via cloudSeed.
+  const cloudFade = hCloud < 3300 ? 1 : (hCloud < 3600 ? 1-(hCloud-3300)/300 : 0);
   if (cloudFade > 0){
-    const pc2 = camY*0.5, cellH2 = 460;
+    const pc2 = camY*0.5, cellH2 = 300;
     const j0 = Math.floor((pc2-150)/cellH2), j1 = Math.ceil((pc2+H+150)/cellH2);
     ctx.globalAlpha = 0.7*cloudFade;
     for (let i=j0;i<=j1;i++){
-      drawCloud(hash(i*5.7)*(W+160)-80, i*cellH2 + hash(i*3.3)*260 - pc2, 0.7+hash(i*9.1)*0.8, (0.5-t*0.3)*cloudFade);
+      // 2 awan per sel agar langit bawah terasa penuh (6-8 awan di layar)
+      drawCloud(hash(i*5.7+cloudSeed)*(W+160)-80, i*cellH2 + hash(i*3.3+cloudSeed)*200 - pc2, 0.7+hash(i*9.1+cloudSeed)*0.8, (0.5-t*0.3)*cloudFade);
+      drawCloud(hash(i*8.9+41+cloudSeed)*(W+160)-80, i*cellH2 + 150 + hash(i*4.7+17+cloudSeed)*200 - pc2, 0.55+hash(i*6.3+53+cloudSeed)*0.7, (0.5-t*0.3)*cloudFade*0.9);
     }
     ctx.globalAlpha = 1;
   }
@@ -1905,8 +1989,9 @@ function drawCharacter(x,y,size,powered,squash,vx,skinId,opacity){
   ctx.restore();
 }
 
-/* ---------- Entity Interpolation (remote players, 15Hz data -> 60fps render) ---------- */
-const INTERP_DELAY_MS = 100; // render posisi ~100ms lebih "lama" dari data terbaru
+/* ---------- Entity Interpolation (remote players, 30Hz data -> 60fps render) ---------- */
+const INTERP_DELAY_MS = 60; // render ~60ms di belakang data terbaru
+const EXTRAPOLATE_MAX_MS = 120; // batas tebakan posisi saat paket telat datang
 
 function getInterpolatedPosition(pid){
   const p = net.players[pid];
@@ -1914,6 +1999,13 @@ function getInterpolatedPosition(pid){
   const h = p.history;
   if (!h || h.length < 2) return { x: p.x, y: p.y }; // pemain baru join: fallback posisi terakhir
   const target = performance.now() - INTERP_DELAY_MS;
+  const last = h[h.length-1];
+  // Ekstrapolasi: target lebih baru dari sampel terakhir (jeda wajar antar
+  // paket 30Hz). Pakai vx/vy terakhir, dibatasi agar tak melesat saat loss.
+  if (target > last.t){
+    const dt = Math.min(EXTRAPOLATE_MAX_MS, target - last.t)/1000;
+    return { x: last.x + (p.vx||0)*dt, y: last.y + (p.vy||0)*dt };
+  }
   // cari indeks i sehingga h[i].t <= target <= h[i+1].t
   let i = h.length - 2;
   while (i > 0 && h[i].t > target) i--;
@@ -2218,7 +2310,8 @@ function drawBigBtn(r, label, primary, fs){
    ============================================================ */
 function drawMenuScene(dt){
   menuT += dt;
-  camY = -3600;
+  // Latar menu = Bumi + aurora (tengah zona EARTH 4500-6800 agar alpha penuh)
+  camY = -5650;
   drawBackground();
   ctx.save();
   ctx.textAlign='center';
@@ -2835,7 +2928,7 @@ function loop(now){
     }
 
     net.lastSend += dt;
-    if (net.lastSend > 0.066 && raceState.phase === 'playing'){
+    if (net.lastSend > 0.033 && raceState.phase === 'playing'){ // 30Hz
       net.lastSend = 0;
       const myP = net.players[net.myId];
       if (myP){
