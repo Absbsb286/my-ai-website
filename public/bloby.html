@@ -3116,9 +3116,24 @@ function setScene(s){
   
   // DEBUG: log scene change
   console.log('[setScene]', s, 'net.room:', !!net.room, 'net.connected:', net.connected, 'net.mode:', net.mode);
-  
-  // Jika ke waiting tapi room hilang (disconnect saat race), coba reconnect
-  if (s === 'waiting' && net.mode !== 'solo' && !net.room && net.roomCode){
+
+  // Overlay input HTML hanya boleh tampil di scene join.
+  // Harus dijalankan SEBELUM early-return reconnect di bawah, kalau tidak
+  // input kode akan tertinggal dan menutupi daftar pemain di scene waiting.
+  if (s === 'join'){
+    roomInput.style.display = 'block';
+    roomInput.value = '';
+    setTimeout(()=>roomInput.focus(), 100);
+  } else {
+    roomInput.style.display = 'none';
+    roomInput.blur();
+  }
+
+  // Reconnect hanya kalau room sebelumnya memang sudah tersambung.
+  // Saat create/join pertama net.connecting masih true, jadi jangan
+  // dianggap sebagai "room hilang" (dulu ini memicu joinRoom dua kali).
+  if (s === 'waiting' && net.mode !== 'solo' && !net.room && net.roomCode
+      && !net.connecting && !net.connected){
     console.log('[setScene] Room lost, attempting reconnect to:', net.roomCode);
     net.connecting = true;
     net.status = 'Koneksi terputus, reconnect...';
@@ -3136,15 +3151,6 @@ function setScene(s){
       setTimeout(() => { netCleanup(); setScene('mpMenu'); }, 2000);
     });
     return; // tunggu reconnect
-  }
-  
-  if (s === 'join'){
-    roomInput.style.display = 'block';
-    roomInput.value = '';
-    setTimeout(()=>roomInput.focus(), 100);
-  } else {
-    roomInput.style.display = 'none';
-    roomInput.blur();
   }
 }
 
