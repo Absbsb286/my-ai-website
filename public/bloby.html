@@ -2280,6 +2280,10 @@ const SKIN_BACK_R = { x: W/2-90, y: 590, w: 180, h: 44 };
 const GO_RETRY = { x: W/2-120, y: 420, w: 240, h: 52 };
 const GO_MENU  = { x: W/2-120, y: 486, w: 240, h: 44 };
 
+// Result scene buttons: Main Lagi (kembali ke waiting), Keluar Room
+const RESULT_REPLAY = { x: W/2-120, y: 560, w: 240, h: 52 };
+const RESULT_LEAVE  = { x: W/2-120, y: 620, w: 240, h: 44 };
+
 // REK 3: param fs opsional + auto-fit agar label muat di tombol sempit.
 // Semua pemanggil lama (3 argumen) tidak berubah perilaku.
 function drawBigBtn(r, label, primary, fs){
@@ -2729,12 +2733,15 @@ function drawResultScene(){
   ctx.textAlign = 'center';
   ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(168,255,205,0.95)';
-  ctx.fillText('💰 + ' + totalEarned + ' koin  (Jelly: ' + raceState.lastEarnedCoins + ' + Bonus: ' + raceState.myBonus + ')', W/2, H - 80);
+  ctx.fillText('💰 + ' + totalEarned + ' koin  (Jelly: ' + raceState.lastEarnedCoins + ' + Bonus: ' + raceState.myBonus + ')', W/2, 490);
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText('Total koin: ' + totalCoins, W/2, H - 58);
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText('Tap di mana saja untuk kembali', W/2, H - 30);
+  ctx.fillText('Total koin: ' + totalCoins, W/2, 515);
+
+  // Tombol: Main Lagi (kembali ke lobby) & Keluar Room
+  drawBigBtn(RESULT_REPLAY, '▶ Main Lagi', true);
+  drawBigBtn(RESULT_LEAVE,  '🚪 Keluar Room', false);
+
   ctx.restore();
 }
 
@@ -3020,15 +3027,43 @@ function startRace(isMulti){
   startMusic();
 }
 
+/* ---------- Reset state race tapi JAGA koneksi room ---------- */
+function resetRaceState(){
+  // Reset race-specific state
+  raceState.phase = 'idle';
+  raceState.startAt = 0;
+  raceState.timeLeft = RACE_TIME;
+  raceState.finalRanking = null;
+  raceState.localDead = false;
+  raceState.myBonus = 0;
+  raceState.lastEarnedCoins = 0;
+  raceState.aliveCheckTimer = 0.5;
+
+  // Reset semua pemain: skor, coin, power, alive
+  Object.keys(net.players).forEach(pid => {
+    const p = net.players[pid];
+    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
+    p.ready = true; // siap untuk race berikutnya
+  });
+
+  // Reset local player
+  resetGame();
+  const myP = net.players[net.myId];
+  if (myP){
+    myP.x = player.x; myP.y = player.y; myP.vx = 0; myP.vy = 0;
+    myP.score = 0; myP.coinCount = 0; myP.powerTimer = 0; myP.alive = true;
+    myP.isMe = true;
+  }
+}
+
 function hostStartRace(){
   if (!net.isHost) return;
   const seed = Math.floor(Math.random()*2147483646)+1;
   const delay = 3200;
 
-  Object.keys(net.players).forEach(pid => {
-    const p = net.players[pid];
-    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
-  });
+  // Reset state race sebelum start (skor, alive, dll)
+  resetRaceState();
+
   // Kirim start berkala sampai semua guest ACK atau 5 detik (FIX guest stuck).
   // Alasan: pesan 'start' via MQTT QoS 0 bisa hilang kalau channel guest belum siap.
   if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
@@ -3101,9 +3136,14 @@ canvas.addEventListener('pointerdown', function(e){
     return;
   }
   if (state === 'result'){
-    sfxToggle();
-    netCleanup();
-    setScene('menu');
+    // Main Lagi -> kembali ke waiting room (lobby)
+    if (pointInRect(lx,ly,RESULT_REPLAY)){
+      sfxToggle(); setScene('waiting'); return;
+    }
+    // Keluar Room -> benar-benar keluar room ke menu multiplayer
+    if (pointInRect(lx,ly,RESULT_LEAVE)){
+      sfxToggle(); netCleanup(); setScene('mpMenu'); return;
+    }
     return;
   }
   if (state === 'gameover'){
