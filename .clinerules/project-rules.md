@@ -114,6 +114,20 @@
     menu tanpa tombol menu utama, jadi tidak ada tombol "hantu" di belakang.
 11. `console.log` debug dihapus; meta `mobile-web-app-capable` ditambahkan.
 
+### ✅ Verifikasi 21 Okt 2026 (2 tab, localhost:3000)
+- Buat room + join: host dan guest saling melihat nama yang benar.
+- Start race dari lobby: guest menerima seed/countdown dan melihat host.
+- Akhir race: guest menerima `over` dan layar hasil tampil; koin hanya
+  bertambah sekali meski `over` dikirim ulang 3x.
+- "Main Lagi" dari layar hasil mengembalikan kedua pemain ke lobby; race
+  kedua berjalan normal.
+- Host menutup tab: guest dipromosikan jadi host setelah 6 detik, dan
+  entri host lama (ghost) hilang dari daftar.
+- Kode room salah: peringatan "Room belum ditemukan... Batalkan" muncul
+  setelah 8 detik (tidak lagi ditutupi status connected palsu).
+- Catatan: ini test 2 tab di satu laptop, bukan 2 device fisik. Skenario
+  3 pemain (guest-guest) belum diuji.
+
 ### Catatan / sisa
 - Metadata `layout.tsx` TIDAK mojibake. Judulnya memang memakai em dash
   U+2014; tampilan "�?" hanya artefak alat baca. Tidak perlu diubah.
