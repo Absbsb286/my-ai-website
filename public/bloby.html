@@ -169,10 +169,12 @@ const net = {
   lastSend: 0,
   connecting: false,
   isHost: false,
+  hostPlayerId: '',
   peerIdToPlayerId: {},
   module: null,
   heartbeat: null,
-  raceSeed: 1
+  raceSeed: 1,
+  _hostLossTimer: null
 };
 
 function genRoomCode(){
@@ -226,8 +228,16 @@ async function loadTrystero(){
   }
 }
 
+function clearHostLossTimer(){
+  if (net._hostLossTimer){
+    try { clearTimeout(net._hostLossTimer); } catch(e){}
+    net._hostLossTimer = null;
+  }
+}
+
 async function netCleanup(){
   stopLobbyHeartbeat();
+  clearHostLossTimer();
   if (net.room){
     try {
       await Promise.race([
@@ -243,6 +253,7 @@ async function netCleanup(){
   net.mode = 'solo';
   net.connecting = false;
   net.isHost = false;
+  net.hostPlayerId = '';
   net.peerIdToPlayerId = {};
   net.roomCode = '';
   net.status = '';
@@ -291,6 +302,7 @@ async function createRoom(){
   await netCleanup();
   net.mode = 'host';
   net.isHost = true;
+  net.hostPlayerId = net.myId;
   net.connecting = true;
   net.roomCode = genRoomCode();
   net.status = 'Menyiapkan room...';
@@ -325,6 +337,7 @@ async function joinRoomNet(code){
   await netCleanup();
   net.mode = 'client';
   net.isHost = false;
+  net.hostPlayerId = '';
   net.connecting = true;
   net.roomCode = code.toUpperCase();
   net.status = 'Menghubungkan...';
@@ -374,27 +387,59 @@ async function joinRoomNet(code){
 }
 
 /* ---------- Host migration sederhana ---------- */
-// Dipanggil di semua guest saat host lama terdeteksi keluar.
+// Beri tenggang waktu sebelum promosi. WebRTC bisa putus sesaat saat tab
+// di-background / jaringan berpindah; dulu guest langsung jadi host dan
+// mengabaikan start dari host asli. Sekarang tunggu 6 detik dan batalkan
+// promosi kalau host kembali terlihat.
+function scheduleHostPromotion(lostHostId, lostPeerId){
+  clearHostLossTimer();
+  net._hostLossTimer = setTimeout(() => {
+    net._hostLossTimer = null;
+    if (net.isHost) return;
+    // Host sudah muncul lagi lewat hello/roster/state?
+    if (lostHostId && net.players[lostHostId]) return;
+    const stillHasHost = Object.keys(net.players).some(pid =>
+      pid !== net.myId && net.players[pid] && net.players[pid].isHost
+    );
+    if (stillHasHost) return;
+    // Peer lama masih terlihat di room? Jangan promosi.
+    try {
+      if (lostPeerId && net.room && typeof net.room.getPeers === 'function'){
+        const peers = net.room.getPeers();
+        if (peers && peers[lostPeerId]) return;
+      }
+    } catch(e){}
+    promoteAfterHostLeave();
+  }, 6000);
+}
+
+// Dipanggil di semua guest saat host lama benar-benar tidak kembali.
 // Pemilihan deterministik (ID terkecil) supaya semua client memilih orang
 // yang sama tanpa perlu voting tambahan.
 function promoteAfterHostLeave(){
-  const ids = Object.keys(net.players).filter(pid => pid !== net.myId);
-  ids.push(net.myId);
+  clearHostLossTimer();
+  const ids = Object.keys(net.players);
+  if (!ids.length) return;
   const candidates = [...new Set(ids)].sort();
-  if (!candidates.length) return;
   const newHostId = candidates[0];
+
+  // Hanya satu host yang boleh ditandai. Ini mencegah dua pemain sama-sama
+  // berlabel host kalau promosi sempat terjadi di sisi yang berbeda.
+  Object.keys(net.players).forEach(pid => {
+    net.players[pid].isHost = (pid === newHostId);
+  });
+  net.hostPlayerId = newHostId;
 
   if (newHostId === net.myId){
     net.isHost = true;
-    if (net.players[net.myId]) net.players[net.myId].isHost = true;
     net.status = '👑 Host keluar — kamu jadi host baru';
     try {
       net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: true});
     } catch(e){}
     if (state === 'waiting') setTimeout(() => broadcastRoster(), 100);
   } else {
+    net.isHost = false;
     const p = net.players[newHostId];
-    if (p) p.isHost = true;
     net.status = 'Host keluar — host baru: ' + (p ? p.name : 'pemain lain');
   }
 
@@ -429,12 +474,18 @@ function setupRoomHandlers(){
       delete net.peerIdToPlayerId[peerId];
     }
     if (net.isHost) setTimeout(() => broadcastRoster(), 100);
-    // Host keluar: pilih host baru supaya room tidak macet di "Menunggu Host".
-    if (hostLeft && !net.isHost) promoteAfterHostLeave();
+    // Host keluar: jangan langsung promosi. Beri tenggang waktu supaya
+    // disconnect sesaat (tab background / pindah jaringan) tidak bikin
+    // guest salah jadi host dan mengabaikan start dari host asli.
+    if (hostLeft && !net.isHost) scheduleHostPromotion(pid, peerId);
   });
 
   getHello((data, peerId) => {
     net.peerIdToPlayerId[peerId] = data.id;
+    if (data.isHost){
+      net.hostPlayerId = data.id;
+      clearHostLossTimer();
+    }
     const existing = net.players[data.id];
     if (existing){
       // Jangan overwrite nama/skin yang sudah benar dengan nilai kosong.
@@ -462,6 +513,7 @@ function setupRoomHandlers(){
         const now = performance.now();
         const inCountdown = raceState.phase === 'countdown';
         net.actions.sendStart({
+          hostId: net.myId,
           seed: net.raceSeed || 1,
           // Saat countdown, samakan sisa hitungannya. Saat sudah playing,
           // guest langsung mulai dengan sisa waktu race.
@@ -477,6 +529,11 @@ function setupRoomHandlers(){
   getRoster((data) => {
     if (net.isHost) return;
     if (!data || !Array.isArray(data.list)) return;
+    const hostEntry = data.list.find(p => p && p.id && p.isHost);
+    if (hostEntry){
+      net.hostPlayerId = hostEntry.id;
+      clearHostLossTimer();
+    }
     // MERGE (bukan REPLACE): jangan hapus entri lokal yang belum ada di roster host,
     // supaya entri sendiri tidak terhapus kalau hello kita telat sampai.
     data.list.forEach(p => {
@@ -555,12 +612,30 @@ function setupRoomHandlers(){
     }
   });
 
-  getStart((data) => {
-    if (net.isHost) return;
+  getStart((data, peerId) => {
     // Terima start dari lobby ATAU dari layar hasil. Dulu guest yang belum
     // menekan "Main Lagi" diabaikan, jadi ketinggalan race saat host mulai.
     if (state !== 'waiting' && state !== 'result') return;
     if (!data || typeof data.seed === 'undefined') return;
+
+    const senderId = net.peerIdToPlayerId[peerId] || '';
+    // Kalau mapping peer sudah ada, hostId harus cocok dengan pengirim.
+    // Ini mencegah paket start lama/asing memicu race.
+    if (senderId && data.hostId && senderId !== data.hostId) return;
+
+    // Pengaman: kalau kita sempat salah dipromosikan jadi host, tapi host
+    // asli mengirim start, turunkan diri dan ikuti start itu. Tanpa ini
+    // guest bisa stuck di lobby karena `if (net.isHost) return` di bawah.
+    if (net.isHost && data.hostId && data.hostId !== net.myId){
+      net.isHost = false;
+      if (net.players[net.myId]) net.players[net.myId].isHost = false;
+    }
+    if (net.isHost) return;
+    if (data.hostId){
+      net.hostPlayerId = data.hostId;
+      clearHostLossTimer();
+    }
+
     setSeed(data.seed);
     net.raceSeed = data.seed;
     raceState.startAt = performance.now() + (data.delay || 0);
@@ -3359,6 +3434,7 @@ function hostStartRace(){
     const rem = Math.max(1, Math.min(RACE_TIME, (raceState.raceEndAt - now) / 1000));
     try {
       net.actions.sendStart({
+        hostId: net.myId,
         seed,
         delay: d,
         remaining: d > 0 ? RACE_TIME : rem
