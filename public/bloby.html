@@ -161,7 +161,8 @@ const net = {
   isHost: false,
   peerIdToPlayerId: {},
   module: null,
-  heartbeat: null
+  heartbeat: null,
+  raceSeed: 1
 };
 
 function genRoomCode(){
@@ -236,6 +237,17 @@ async function netCleanup(){
   net.roomCode = '';
   net.status = '';
   net.lastSend = 0;
+  net.raceSeed = 1;
+  if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
+  // Keluar dari room = sesi race selesai. Tanpa ini, indikator
+  // "Race selesai" ikut terbawa ke room baru.
+  raceState.phase = 'idle';
+  raceState.startAt = 0;
+  raceState.raceEndAt = 0;
+  raceState.finalRanking = null;
+  raceState.localDead = false;
+  raceState.myBonus = 0;
+  raceState.lastEarnedCoins = 0;
   // Reset module Trystero biar tidak ada state kotor dari room lama
   // (comment dulu, bisa diaktifkan kalau perlu)
   // net.module = null;
@@ -314,23 +326,18 @@ async function joinRoomNet(code){
     net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();
 
-    // Room validation timeout
+    // Room validation: hanya beri pesan, JANGAN auto-kick.
+    // Koneksi MQTT/WebRTC kadang butuh >5 detik; dulu guest yang sebenarnya
+    // valid tetap ditendang ke menu sebelum host sempat mengirim hello.
     setTimeout(() => {
-      // Cek apakah ada host yang terdeteksi
+      if (state !== 'waiting' || net.connected) return;
       const hasHost = Object.keys(net.players).some(
         pid => pid !== net.myId && net.players[pid].isHost
       );
-      
-      // Kalau tidak ada host DAN masih di scene waiting DAN belum connected
-      if (!hasHost && state === 'waiting' && !net.connected) {
-        net.status = '❌ Room tidak ditemukan. Pastikan kode benar dan host sudah membuat room.';
-        // Tunggu 2 detik supaya user baca pesan, lalu kembali ke menu
-        setTimeout(() => {
-          netCleanup();
-          setScene('mpMenu');
-        }, 2000);
+      if (!hasHost && !net.connected) {
+        net.status = '❌ Room belum ditemukan. Cek kode, atau tekan Keluar.';
       }
-    }, 5000);
+    }, 8000);
 
     net.players[net.myId] = {
       x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
@@ -356,6 +363,37 @@ async function joinRoomNet(code){
   }
 }
 
+/* ---------- Host migration sederhana ---------- */
+// Dipanggil di semua guest saat host lama terdeteksi keluar.
+// Pemilihan deterministik (ID terkecil) supaya semua client memilih orang
+// yang sama tanpa perlu voting tambahan.
+function promoteAfterHostLeave(){
+  const ids = Object.keys(net.players).filter(pid => pid !== net.myId);
+  ids.push(net.myId);
+  const candidates = [...new Set(ids)].sort();
+  if (!candidates.length) return;
+  const newHostId = candidates[0];
+
+  if (newHostId === net.myId){
+    net.isHost = true;
+    if (net.players[net.myId]) net.players[net.myId].isHost = true;
+    net.status = '👑 Host keluar — kamu jadi host baru';
+    try {
+      net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: true});
+    } catch(e){}
+    if (state === 'waiting') setTimeout(() => broadcastRoster(), 100);
+  } else {
+    const p = net.players[newHostId];
+    if (p) p.isHost = true;
+    net.status = 'Host keluar — host baru: ' + (p ? p.name : 'pemain lain');
+  }
+
+  setTimeout(() => {
+    if (net.status && net.status.indexOf('Host keluar') === 0){ net.status = ''; }
+    else if (net.status && net.status.indexOf('👑 Host keluar') === 0){ net.status = ''; }
+  }, 4000);
+}
+
 function setupRoomHandlers(){
   const room = net.room;
   const [sendHello, getHello]       = room.makeAction('hello');
@@ -375,11 +413,14 @@ function setupRoomHandlers(){
 
   room.onPeerLeave((peerId) => {
     const pid = net.peerIdToPlayerId[peerId];
+    const hostLeft = !!(pid && net.players[pid] && net.players[pid].isHost);
     if (pid){
       delete net.players[pid];
       delete net.peerIdToPlayerId[peerId];
     }
     if (net.isHost) setTimeout(() => broadcastRoster(), 100);
+    // Host keluar: pilih host baru supaya room tidak macet di "Menunggu Host".
+    if (hostLeft && !net.isHost) promoteAfterHostLeave();
   });
 
   getHello((data, peerId) => {
@@ -401,6 +442,26 @@ function setupRoomHandlers(){
     net.connecting = false;
     net.status = '';
     if (net.isHost) setTimeout(() => broadcastRoster(), 100);
+
+    // Guest yang telat masuk saat race sudah berjalan: kirim start yang sama
+    // (seed + sisa waktu) supaya dia ikut race di map yang benar, bukan
+    // auto-start dari paket state dengan map lama.
+    if (net.isHost && state === 'race'
+        && (raceState.phase === 'playing' || raceState.phase === 'countdown')){
+      try {
+        const now = performance.now();
+        const inCountdown = raceState.phase === 'countdown';
+        net.actions.sendStart({
+          seed: net.raceSeed || 1,
+          // Saat countdown, samakan sisa hitungannya. Saat sudah playing,
+          // guest langsung mulai dengan sisa waktu race.
+          delay: inCountdown ? Math.max(0, raceState.startAt - now) : 0,
+          remaining: inCountdown
+            ? RACE_TIME
+            : Math.max(1, (raceState.raceEndAt - now) / 1000)
+        }, peerId);
+      } catch(e){}
+    }
   });
 
   getRoster((data) => {
@@ -445,16 +506,11 @@ function setupRoomHandlers(){
 
   getState((data) => {
     if (data.id === net.myId) return;
-    // FIX guest stuck: kalau guest masih di lobby tapi host sudah main (state alive),
-    // paksa masuk race agar tidak stuck di "Menunggu host memulai..." selamanya.
-    if (!net.isHost && state === 'waiting' && data.alive) {
-      if (raceState.phase !== 'playing') {
-        raceState.phase = 'playing';
-        raceState.timeLeft = RACE_TIME;
-        state = 'race';
-        startLobbyHeartbeat();
-      }
-    }
+    // JANGAN auto-start dari paket state. Dulu guest dipaksa masuk race di sini,
+    // padahal belum menerima seed: map, kamera, dan timer jadi basi. Guest bisa
+    // langsung jatuh dan membuat race host berakhir prematur.
+    // Start sekarang selalu lewat action 'start' (host juga mengirim ulang
+    // saat menerima hello dari guest yang telat masuk).
     let p = net.players[data.id];
     if (!p){
       p = {
@@ -491,12 +547,22 @@ function setupRoomHandlers(){
 
   getStart((data) => {
     if (net.isHost) return;
-    // Izinkan race ke-2: guest di lobby 'waiting' boleh terima start walau phase masih 'ended' dari race sebelumnya.
-    if (raceState.phase !== 'idle' && state !== 'waiting') return;
+    // Terima start dari lobby ATAU dari layar hasil. Dulu guest yang belum
+    // menekan "Main Lagi" diabaikan, jadi ketinggalan race saat host mulai.
+    if (state !== 'waiting' && state !== 'result') return;
     if (!data || typeof data.seed === 'undefined') return;
     setSeed(data.seed);
-    raceState.startAt = performance.now() + data.delay;
+    net.raceSeed = data.seed;
+    raceState.startAt = performance.now() + (data.delay || 0);
     startRace(true);
+    // Guest yang telat masuk diberi sisa waktu yang sama dengan host.
+    const remaining = (typeof data.remaining === 'number')
+      ? Math.max(1, Math.min(RACE_TIME, data.remaining))
+      : RACE_TIME;
+    raceState.timeLeft = remaining;
+    // Timer berbasis wall-clock: tetap akurat walau tab di-background
+    // (rAF di-throttle dan dt di-cap 0.05s).
+    raceState.raceEndAt = raceState.startAt + remaining * 1000;
     try { net.actions.sendStartAck({id: net.myId}); } catch(e){}
   });
 
@@ -630,6 +696,7 @@ let airJumpsLeft = 0;
 const raceState = {
   phase: 'idle',
   startAt: 0,
+  raceEndAt: 0,
   timeLeft: 0,
   finalRanking: null,
   localDead: false,
@@ -858,6 +925,8 @@ function endRaceHost(){
   if (raceState.phase === 'ended') return;
   raceState.phase = 'ended';
   stopMusic();
+  // Jangan kirim start susulan setelah race selesai.
+  if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
 
   const arr = Object.keys(net.players).map(pid => ({
     id: pid, name: net.players[pid].name, skin: net.players[pid].skin,
@@ -865,7 +934,10 @@ function endRaceHost(){
   }));
   arr.sort((a,b) => {
     if (a.alive !== b.alive) return b.alive - a.alive;
-    return b.score - a.score;
+    if (b.score !== a.score) return b.score - a.score;
+    // Tie-break deterministik: dulu host selalu menang karena urutan insert,
+    // sekarang pakai ID agar tidak bias ke host.
+    return String(a.id).localeCompare(String(b.id));
   });
 
   const ranking = arr.map((p,i) => {
@@ -2133,10 +2205,15 @@ function drawRaceHUD(){
 
   if (net.mode !== 'solo'){
     const remain = Math.max(0, Math.ceil(raceState.timeLeft));
+    const timerLabel = '⏱ ' + remain + 's';
     ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
+    // Pill gelap supaya timer tetap terbaca saat platform lewat di belakangnya.
+    const timerW = ctx.measureText(timerLabel).width;
+    ctx.fillStyle = 'rgba(7,9,24,0.62)';
+    roundRect(10, 48, timerW + 12, 22, 11); ctx.fill();
     ctx.fillStyle = remain <= 10 ? '#FF6B6B' : '#FFF7E0';
-    ctx.fillText('⏱ ' + remain + 's', 15, 62);
+    ctx.fillText(timerLabel, 15, 62);
 
     const lb = Object.keys(net.players).map(pid => ({
       id: pid,
@@ -2520,10 +2597,13 @@ function drawWaitingScene(){
   ctx.fillStyle = '#FFF7E0';
   ctx.fillText(net.isHost ? '🏠 Room Kamu' : '⏳ Menunggu Host', W/2, 90);
 
-  // Indicator: race continuation (same room)
-  ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = 'rgba(168,255,205,0.85)';
-  ctx.fillText('🔄 Race selesai — room sama, main lagi!', W/2, 112);
+  // Indicator: hanya tampil kalau room ini memang baru selesai race.
+  // Jangan muncul di room yang baru dibuat (phase masih 'idle').
+  if (raceState.phase === 'ended'){
+    ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = 'rgba(168,255,205,0.85)';
+    ctx.fillText('🔄 Race selesai — room sama, main lagi!', W/2, 112);
+  }
 
   ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -2950,7 +3030,9 @@ function loop(now){
       }
     }
     if (raceState.phase === 'playing' && net.mode !== 'solo'){
-      raceState.timeLeft -= dt;
+      // Pakai waktu dinding, bukan dt rAF. Di tab background rAF melambat
+      // drastis; dulu timer ikut melambat dan race bisa molor.
+      raceState.timeLeft = Math.max(0, (raceState.raceEndAt - performance.now()) / 1000);
       if (raceState.timeLeft <= 0){
         raceState.timeLeft = 0;
         if (net.isHost) endRaceHost();
@@ -3035,6 +3117,7 @@ function startRace(isMulti){
   if (isMulti) startLobbyHeartbeat(); else stopLobbyHeartbeat();
   raceState.phase = isMulti ? 'countdown' : 'playing';
   raceState.timeLeft = RACE_TIME;
+  raceState.raceEndAt = 0;
   raceState.finalRanking = null;
   raceState.localDead = false;
   raceState.myBonus = 0;
@@ -3060,6 +3143,7 @@ function resetRaceState(){
   // Reset race-specific state
   raceState.phase = 'idle';
   raceState.startAt = 0;
+  raceState.raceEndAt = 0;
   raceState.timeLeft = RACE_TIME;
   raceState.finalRanking = null;
   raceState.localDead = false;
@@ -3086,27 +3170,63 @@ function resetRaceState(){
 
 function hostStartRace(){
   if (!net.isHost) return;
+  // Jangan mulai race sendirian: checkHostEndCondition akan langsung
+  // mengakhiri race (hanya 1 pemain alive) dan host dapat bonus gratis.
+  const remoteCount = Object.keys(net.players).length - 1;
+  if (remoteCount < 1){
+    net.status = '👥 Butuh minimal 2 pemain untuk mulai race';
+    return;
+  }
+  // Pastikan semua pemain di daftar benar-benar masih terhubung. Tanpa ini,
+  // host bisa memulai race dengan pemain "hantu" yang tab-nya sudah tidur,
+  // lalu race berjalan 90 detik tanpa lawan.
+  let peerCount = 0;
+  try {
+    if (net.room && typeof net.room.getPeers === 'function'){
+      peerCount = Object.keys(net.room.getPeers()).length;
+      if (peerCount < remoteCount){
+        net.status = '👥 Tunggu semua pemain terhubung dulu';
+        return;
+      }
+    }
+  } catch(e){}
   const seed = Math.floor(Math.random()*2147483646)+1;
   const delay = 3200;
+  net.raceSeed = seed; // dipakai untuk resend start ke guest yang telat
 
   // Reset state race sebelum start (skor, alive, dll)
   resetRaceState();
 
+  setSeed(seed);
+  raceState.startAt = performance.now() + delay;
+  startRace(true);
+  raceState.raceEndAt = raceState.startAt + RACE_TIME * 1000;
+
   // Kirim start berkala sampai semua guest ACK atau 5 detik (FIX guest stuck).
   // Alasan: pesan 'start' via MQTT QoS 0 bisa hilang kalau channel guest belum siap.
+  // Delay & sisa waktu dihitung ulang tiap kirim, jadi guest yang baru menerima
+  // start di detik ke-4 tidak memulai countdown 3,2 detik dari nol.
   if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
   net._startAckCount = 0;
   net._startExpected = Math.max(0, Object.keys(net.players).length - 1);
-  const sendStartOnce = () => { try { net.actions.sendStart({seed, delay}); } catch(e){} };
+  const sendStartOnce = () => {
+    const now = performance.now();
+    const d = Math.max(0, raceState.startAt - now);
+    const rem = Math.max(1, Math.min(RACE_TIME, (raceState.raceEndAt - now) / 1000));
+    try {
+      net.actions.sendStart({
+        seed,
+        delay: d,
+        remaining: d > 0 ? RACE_TIME : rem
+      });
+    } catch(e){}
+  };
   sendStartOnce();
   net._startInterval = setInterval(() => {
     sendStartOnce();
     if (net._startAckCount >= net._startExpected){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
   }, 500);
   setTimeout(() => { if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; } }, 5000);
-  setSeed(seed);
-  raceState.startAt = performance.now() + delay;
-  startRace(true);
 }
 
 function setScene(s){
