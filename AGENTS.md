@@ -63,7 +63,7 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Untuk sejarah keputusan, baca section "Sejarah & Konteks" di file itu
 
 ## Testing
-- Status 21 Okt 2026: alur room/race/hasil/replay/host migration lolos di 2 tab lokal
+- Status 21 Okt 2026: alur room/race/hasil/replay/host migration lolos di 2 tab lokal + production
 - Setelah edit bloby.html: test di Chrome Incognito
 - Multiplayer: test 2 tab dulu, baru lintas device
 - Test TURN: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/

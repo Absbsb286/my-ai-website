@@ -114,7 +114,7 @@
     menu tanpa tombol menu utama, jadi tidak ada tombol "hantu" di belakang.
 11. `console.log` debug dihapus; meta `mobile-web-app-capable` ditambahkan.
 
-### ✅ Verifikasi 21 Okt 2026 (2 tab, localhost:3000)
+### ✅ Verifikasi 21 Okt 2026 (2 tab, localhost + production)
 - Buat room + join: host dan guest saling melihat nama yang benar.
 - Start race dari lobby: guest menerima seed/countdown dan melihat host.
 - Akhir race: guest menerima `over` dan layar hasil tampil; koin hanya
@@ -125,6 +125,8 @@
   entri host lama (ghost) hilang dari daftar.
 - Kode room salah: peringatan "Room belum ditemukan... Batalkan" muncul
   setelah 8 detik (tidak lagi ditutupi status connected palsu).
+- Production: penanda kode baru ada, buat room + guest join berhasil,
+  tanpa error console.
 - Catatan: ini test 2 tab di satu laptop, bukan 2 device fisik. Skenario
   3 pemain (guest-guest) belum diuji.
 
