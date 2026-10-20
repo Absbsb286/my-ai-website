@@ -91,7 +91,7 @@ const BTN_R  = isTouch ? 56 : 42;
 const BTN_Y  = H - (isTouch ? 88 : 78);
 const BTN_LX = isTouch ? 82 : 66;
 const BTN_RX = W - (isTouch ? 82 : 66);
-const PAUSE_BTN = { x: W/2 - 20, y: 12, w: 40, h: 40 };
+const PAUSE_BTN = { x: W/2 - 22, y: 10, w: 44, h: 44 };
 
 const BONUS_LAST_STANDING = 100;
 const BONUS_WINNER = 50;
@@ -100,6 +100,16 @@ const BONUS_WINNER = 50;
 let settings = { music:true, sfx:true, haptic:true };
 try{ const s = localStorage.getItem('blobby_settings'); if(s) Object.assign(settings, JSON.parse(s)); }catch(e){}
 function saveSettings(){ try{ localStorage.setItem('blobby_settings', JSON.stringify(settings)); }catch(e){} }
+
+/* ---------- Tutorial pertama ---------- */
+// Ditampilkan sekali sebelum run Solo pertama. Bisa dibuka lagi lewat tombol ? di menu.
+let tutorialSeen = false;
+try{ tutorialSeen = localStorage.getItem('blobby_tutorial_seen') === '1'; }catch(e){}
+let tutorialOpen = false, tutorialPendingSolo = false;
+function markTutorialSeen(){
+  tutorialSeen = true;
+  try{ localStorage.setItem('blobby_tutorial_seen', '1'); }catch(e){}
+}
 
 /* ---------- Skins ---------- */
 const SKINS = [
@@ -2118,20 +2128,20 @@ function drawPauseButton(){
   const b = PAUSE_BTN;
   ctx.save();
   ctx.globalAlpha = 0.72;
-  ctx.fillStyle = '#0B1020'; roundRect(b.x,b.y,b.w,b.h,10); ctx.fill();
+  ctx.fillStyle = '#0B1020'; roundRect(b.x,b.y,b.w,b.h,12); ctx.fill();
   ctx.globalAlpha = 0.95;
   ctx.strokeStyle = 'rgba(255,247,224,0.5)'; ctx.lineWidth = 1.6;
-  roundRect(b.x,b.y,b.w,b.h,10); ctx.stroke();
+  roundRect(b.x,b.y,b.w,b.h,12); ctx.stroke();
   ctx.fillStyle = '#FFF7E0';
   if (paused && net.mode === 'solo'){
     ctx.beginPath();
-    ctx.moveTo(b.x+14, b.y+10);
-    ctx.lineTo(b.x+14, b.y+30);
-    ctx.lineTo(b.x+28, b.y+20);
+    ctx.moveTo(b.x+16, b.y+11);
+    ctx.lineTo(b.x+16, b.y+33);
+    ctx.lineTo(b.x+31, b.y+22);
     ctx.closePath(); ctx.fill();
   } else {
-    ctx.fillRect(b.x+12, b.y+11, 5, 18);
-    ctx.fillRect(b.x+23, b.y+11, 5, 18);
+    ctx.fillRect(b.x+14, b.y+12, 5, 20);
+    ctx.fillRect(b.x+25, b.y+12, 5, 20);
   }
   ctx.restore();
 }
@@ -2153,23 +2163,32 @@ function togglePause(){
 
 function drawPauseOverlay(){
   ctx.save();
-  ctx.fillStyle = 'rgba(7,9,22,0.72)';
+  ctx.fillStyle = 'rgba(7,9,22,0.82)';
   ctx.fillRect(0,0,W,H);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '700 44px Fredoka, system-ui, sans-serif';
   ctx.fillStyle = '#FFD02E';
-  ctx.fillText('PAUSE', W/2, H/2 - 20);
-  ctx.font = '500 15px Fredoka, system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,247,224,0.9)';
-  ctx.fillText('Tap tombol pause untuk lanjut', W/2, H/2 + 24);
+  ctx.fillText('PAUSE', W/2, H/2 - 82);
+  ctx.font = '500 14px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.85)';
+  ctx.fillText('Blobby istirahat dulu. Pilih mau lanjut atau keluar.', W/2, H/2 - 44);
+  ctx.font = '500 11px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.55)';
+  ctx.fillText('Tips: tekan P atau Esc untuk lanjut cepat', W/2, H/2 - 20);
   ctx.restore();
+
+  drawBigBtn(PAUSE_RESUME, '▶ Lanjutkan', true, 18);
+  drawBigBtn(PAUSE_MENU, '⌂ Menu Utama', false, 15);
 }
 
 function drawRaceHUD(){
   ctx.save();
   ctx.textBaseline='middle';
-  ctx.font = 'bold 23px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.font = 'bold 9px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.textAlign='left';
+  ctx.fillStyle='rgba(255,247,224,0.6)';
+  ctx.fillText('SKOR', 15, 14);
+  ctx.font = 'bold 23px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle='rgba(4,5,16,0.55)';
   ctx.fillText(score, 17, 35);
   ctx.fillStyle='#FFF7E0';
@@ -2177,16 +2196,19 @@ function drawRaceHUD(){
 
   if (net.mode === 'solo') drawPauseButton();
 
-  const pw=100, ph=36, px=W-pw-14, py=15;
+  const pw=104, ph=36, px=W-pw-14, py=15;
   ctx.fillStyle='rgba(7,9,24,0.62)';
   roundRect(px,py,pw,ph,18); ctx.fill();
   ctx.strokeStyle='rgba(255,210,46,0.35)'; ctx.lineWidth=1.5;
   roundRect(px,py,pw,ph,18); ctx.stroke();
-  drawJelly(px+24, py+ph/2, 0.66, 0, 4);
-  ctx.font='bold 17px Fredoka, system-ui, -apple-system, sans-serif';
+  drawJelly(px+22, py+ph/2, 0.66, 0, 4);
   ctx.textAlign='left';
+  ctx.font='bold 9px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle='rgba(255,247,224,0.6)';
+  ctx.fillText('MEGA', px+40, py+11);
+  ctx.font='bold 16px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = coinCount === COINS_NEEDED-1 ? '#FFD02E' : '#FFF7E0';
-  ctx.fillText(coinCount+'/'+COINS_NEEDED, px+44, py+ph/2+1);
+  ctx.fillText(coinCount+'/'+COINS_NEEDED, px+40, py+25);
 
   if (powerTimer > 0){
     const frac = powerTimer/POWER_DURATION;
@@ -2337,6 +2359,11 @@ const MENU_MP   = { x: W/2-120, y: 520, w: 240, h: 50 };
 // REK 3 (Hallmark grid): SKIN & SET sebaris, 115+10+115 = 240 sejajar tombol lain.
 const MENU_SKIN = { x: W/2-120, y: 580, w: 115, h: 40 };
 const MENU_SET  = { x: W/2+5, y: 580, w: 115, h: 40 };
+const MENU_HELP = { x: W-58, y: 14, w: 44, h: 44 };
+
+// Tutorial overlay (sekali di run pertama + tombol bantuan di menu).
+const TUT_START = { x: W/2-110, y: 520, w: 220, h: 50 };
+const TUT_CLOSE = { x: W-72, y: 112, w: 44, h: 44 };
 
 const MPM_CREATE = { x: W/2-120, y: 340, w: 240, h: 56 };
 const MPM_JOIN   = { x: W/2-120, y: 410, w: 240, h: 56 };
@@ -2356,6 +2383,10 @@ const SKIN_BACK_R = { x: W/2-90, y: 590, w: 180, h: 44 };
 
 const GO_RETRY = { x: W/2-120, y: 420, w: 240, h: 52 };
 const GO_MENU  = { x: W/2-120, y: 486, w: 240, h: 44 };
+
+// Overlay pause: tombol besar supaya tidak terasa seperti jebakan di HP.
+const PAUSE_RESUME = { x: W/2-110, y: H/2+34, w: 220, h: 52 };
+const PAUSE_MENU   = { x: W/2-110, y: H/2+100, w: 220, h: 44 };
 
 // Result scene buttons: Main Lagi (kembali ke waiting), Keluar Room
 // Diperlebar jarak: REPLAY y=540, LEAVE y=610 (gap 18px)
@@ -2411,7 +2442,7 @@ function drawMenuScene(dt){
   ctx.fillText('Blobby', W/2, 170);
   ctx.font='bold 15px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.9)';
-  ctx.fillText('Jelly Jump — Multiplayer', W/2, 205);
+  ctx.fillText('Jelly Jump — Solo & Multiplayer', W/2, 205);
   ctx.restore();
 
   const by = 330 + Math.sin(menuT*3)*14;
@@ -2469,7 +2500,7 @@ function drawMenuScene(dt){
 
   drawBigBtn(MENU_SOLO, '🎯 Solo', true);
   drawBigBtn(MENU_MP, '🌐 Multiplayer', true);
-  drawBigBtn(MENU_SKIN, '🎨 ' + getSkin(selectedSkin).name, false, 15);
+  drawBigBtn(MENU_SKIN, '🎨 Skin: ' + getSkin(selectedSkin).name, false, 14);
   drawBigBtn(MENU_SET,  '⚙ Pengaturan', false, 15);
 
   if (best > 0){
@@ -2477,9 +2508,110 @@ function drawMenuScene(dt){
     ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText('🏆 Solo Best: ' + best, W/2, H - 20);
+    ctx.fillText('🏆 Skor Terbaik Solo: ' + best, W/2, H - 20);
     ctx.restore();
   }
+  // Hanya tampil di menu utama, bukan saat menu dipakai sebagai latar scene lain.
+  if (state === 'menu' && !tutorialOpen) drawMenuHelpButton();
+}
+
+function drawMenuHelpButton(){
+  const b = MENU_HELP;
+  ctx.save();
+  ctx.fillStyle = 'rgba(7,9,24,0.55)';
+  ctx.beginPath(); ctx.arc(b.x+b.w/2, b.y+b.h/2, b.w/2, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,247,224,0.45)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(b.x+b.w/2, b.y+b.h/2, b.w/2, 0, 6.283); ctx.stroke();
+  ctx.font = 'bold 20px Fredoka, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText('?', b.x+b.w/2, b.y+b.h/2+1);
+  ctx.restore();
+}
+
+function drawTutorialRow(icon, title, sub, y){
+  ctx.save();
+  ctx.beginPath(); ctx.arc(54, y, 15, 0, 6.283);
+  ctx.fillStyle = 'rgba(255,210,46,0.14)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,210,46,0.38)'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.font = '15px Fredoka, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFD02E';
+  ctx.fillText(icon, 54, y+1);
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText(title, 80, y-7);
+  ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.66)';
+  ctx.fillText(sub, 80, y+11);
+  ctx.restore();
+}
+
+function drawTutorialOverlay(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(7,9,22,0.92)';
+  ctx.fillRect(0,0,W,H);
+
+  const cx=26, cy=100, cw=W-52, ch=520;
+  const g = ctx.createLinearGradient(cx,cy,cx,cy+ch);
+  g.addColorStop(0,'rgba(31,42,78,0.98)');
+  g.addColorStop(1,'rgba(12,16,36,0.98)');
+  ctx.fillStyle=g;
+  roundRect(cx,cy,cw,ch,24); ctx.fill();
+  ctx.strokeStyle='rgba(255,210,46,0.42)'; ctx.lineWidth=1.6;
+  roundRect(cx,cy,cw,ch,24); ctx.stroke();
+
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 28px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle='#FFD02E';
+  ctx.fillText('CARA MAIN', W/2, 146);
+  ctx.font='12px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle='rgba(255,247,224,0.62)';
+  ctx.fillText('Kenali Blobby dulu, 20 detik saja.', W/2, 174);
+
+  drawTutorialRow('↕',  'Blobby memantul otomatis', 'dari platform ke platform.', 216);
+  drawTutorialRow('◀▶', 'Geser kiri / kanan',        'tahan tombol ◀ ▶ atau panah.', 264);
+  drawTutorialRow('⤒',  'Lompat ganda',              'ketuk 2× di HP, Space / W di PC.', 312);
+  drawTutorialRow('🪙', 'Kumpulkan 17 koin jelly',    'untuk berubah jadi MEGA.', 360);
+  drawTutorialRow('🏆', 'Skor dari ketinggian + koin', 'koin otomatis tersimpan.', 408);
+
+  ctx.font='11px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle='rgba(168,255,205,0.82)';
+  ctx.fillText('Tips: hindari jatuh terlalu jauh dari kamera.', W/2, 462);
+  ctx.restore();
+
+  drawBigBtn(TUT_START, tutorialPendingSolo ? '▶ Siap, Main!' : 'Mengerti', true, 18);
+
+  const b = TUT_CLOSE;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath(); ctx.arc(b.x+b.w/2, b.y+b.h/2, b.w/2, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(b.x+b.w/2, b.y+b.h/2, b.w/2, 0, 6.283); ctx.stroke();
+  ctx.font='bold 16px Fredoka, system-ui, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#FFF7E0';
+  ctx.fillText('✕', b.x+b.w/2, b.y+b.h/2+1);
+  ctx.restore();
+}
+
+function openTutorial(pendingSolo){
+  tutorialOpen = true;
+  tutorialPendingSolo = !!pendingSolo;
+}
+
+function closeTutorial(startNow){
+  markTutorialSeen();
+  tutorialOpen = false;
+  const shouldStart = startNow && tutorialPendingSolo;
+  tutorialPendingSolo = false;
+  if (shouldStart) startSolo();
+}
+
+function requestSolo(){
+  if (!tutorialSeen){ openTutorial(true); return; }
+  startSolo();
 }
 
 function drawMPMenuScene(){
@@ -2714,7 +2846,9 @@ function drawWaitingScene(){
 }
 
 function drawGameOverScene(){
-  drawMenuScene(0);
+  // Latar bersih tanpa UI menu, supaya tombol menu tidak membayang di belakang.
+  camY = -5650;
+  drawBackground();
   ctx.save();
   ctx.fillStyle = 'rgba(7,9,22,0.9)';
   ctx.fillRect(0,0,W,H);
@@ -2741,18 +2875,18 @@ function drawGameOverScene(){
 
   ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('🏆 Best: ' + best, W/2, cy+105);
+  ctx.fillText('🏆 Terbaik: ' + best, W/2, cy+105);
 
-  drawJelly(W/2-55, cy+140, 0.7, 0, 0);
+  drawJelly(W/2-55, cy+135, 0.7, 0, 0);
   ctx.font = 'bold 15px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#FFF7E0';
-  ctx.fillText(coinsTotal + ' Jelly', W/2-30, cy+141);
+  ctx.fillText('+' + coinsTotal + ' koin', W/2-30, cy+136);
 
   ctx.textAlign = 'center';
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = 'rgba(168,255,205,0.9)';
-  ctx.fillText('+ ' + raceState.lastEarnedCoins + ' koin ditambahkan', W/2, cy+165);
+  ctx.fillStyle = 'rgba(168,255,205,0.92)';
+  ctx.fillText('Total koin kamu: ' + totalCoins, W/2, cy+160);
 
   ctx.restore();
 
@@ -2893,7 +3027,7 @@ function drawSettingsScene(){
   ctx.fillText('PENGATURAN', W/2, 140);
   ctx.font='12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle='rgba(255,255,255,0.55)';
-  ctx.fillText('Tap untuk toggle', W/2, 172);
+  ctx.fillText('Ketuk untuk mengubah', W/2, 172);
   ctx.restore();
 
   SETTINGS_ITEMS.forEach((item, i) => {
@@ -3013,6 +3147,7 @@ function render(dt){
     ctx.fillStyle = 'rgba(255,210,46,'+(flash*0.45).toFixed(3)+')';
     ctx.fillRect(-40,-40,W+80,H+80);
   }
+  if (tutorialOpen) drawTutorialOverlay();
   ctx.restore();
 }
 
@@ -3068,10 +3203,18 @@ function loop(now){
 
 window.addEventListener('keydown', function(e){
   const k = e.key, c = e.code;
+  if (tutorialOpen){
+    if (k==='Escape'){ closeTutorial(false); e.preventDefault(); return; }
+    if (k===' '||k==='Enter'){ closeTutorial(true); e.preventDefault(); return; }
+    return;
+  }
   if ((k==='p'||k==='P'||k==='Escape') && state === 'race' && net.mode === 'solo'){
     togglePause(); e.preventDefault(); return;
   }
-  if (paused && net.mode === 'solo' && state === 'race') return;
+  if (paused && net.mode === 'solo' && state === 'race'){
+    if (k===' '||k==='Enter'){ togglePause(); e.preventDefault(); }
+    return;
+  }
   if (k==='ArrowLeft'||c==='ArrowLeft'||k==='a'||k==='A'||c==='KeyA') keys.left = true;
   if (k==='ArrowRight'||c==='ArrowRight'||k==='d'||k==='D'||c==='KeyD') keys.right = true;
 
@@ -3080,7 +3223,7 @@ window.addEventListener('keydown', function(e){
       e.preventDefault(); doJump();
     }
   } else if (state === 'menu'){
-    if (k===' '||k==='Enter'){ e.preventDefault(); startSolo(); }
+    if (k===' '||k==='Enter'){ e.preventDefault(); requestSolo(); }
   } else if (state === 'gameover'){
     if (k===' '||k==='Enter'){ e.preventDefault(); startSolo(); }
   }
@@ -3123,6 +3266,7 @@ function startRace(isMulti){
   raceState.myBonus = 0;
   raceState.lastEarnedCoins = 0;
   raceState.aliveCheckTimer = 0.5;
+  lastTapTime = 0; // jangan bawa tap terakhir dari menu/tutorial ke dalam race
 
   if (!isMulti){
     resetGame(Math.floor(Math.random()*2147483646)+1);
@@ -3279,8 +3423,15 @@ canvas.addEventListener('pointerdown', function(e){
   const ac = AC(); if (ac && ac.state==='suspended') ac.resume();
   const lx = logicalX(e.clientX), ly = logicalY(e.clientY);
 
+  if (tutorialOpen){
+    if (pointInRect(lx,ly,TUT_START)){ sfxToggle(); closeTutorial(true); return; }
+    if (pointInRect(lx,ly,TUT_CLOSE)){ sfxToggle(); closeTutorial(false); return; }
+    return;
+  }
+
   if (state === 'menu'){
-    if (pointInRect(lx,ly,MENU_SOLO)){ sfxToggle(); startSolo(); return; }
+    if (pointInRect(lx,ly,MENU_HELP)){ sfxToggle(); openTutorial(false); return; }
+    if (pointInRect(lx,ly,MENU_SOLO)){ sfxToggle(); requestSolo(); return; }
     if (pointInRect(lx,ly,MENU_MP)){ sfxToggle(); setScene('mpMenu'); return; }
     if (pointInRect(lx,ly,MENU_SKIN)){ sfxToggle(); returnState='menu'; setScene('skins'); return; }
     if (pointInRect(lx,ly,MENU_SET)){ sfxToggle(); returnState='menu'; setScene('settings'); return; }
@@ -3373,7 +3524,13 @@ canvas.addEventListener('pointerdown', function(e){
       }
       return;
     }
-    if (paused && net.mode === 'solo') return;
+    if (paused && net.mode === 'solo'){
+      if (pointInRect(lx,ly,PAUSE_RESUME)){ sfxToggle(); togglePause(); haptic(15); return; }
+      if (pointInRect(lx,ly,PAUSE_MENU)){
+        sfxToggle(); paused = false; stopMusic(); setScene('menu'); return;
+      }
+      return;
+    }
     if (raceState.localDead) return;
     if (raceState.phase !== 'playing') return;
 
@@ -3441,7 +3598,16 @@ canvas.addEventListener('touchstart', e => {
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('gesturechange', e => e.preventDefault());
 document.addEventListener('gestureend', e => e.preventDefault());
-document.addEventListener('visibilitychange', () => { if (!document.hidden) last = performance.now(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){
+    // Solo: jangan biarkan Blobby jatuh saat pemain pindah aplikasi/tab.
+    if (state === 'race' && net.mode === 'solo' && raceState.phase === 'playing' && !paused){
+      togglePause();
+    }
+    return;
+  }
+  last = performance.now();
+});
 
 roomInput.addEventListener('keydown', e => {
   if (e.key === 'Enter'){
