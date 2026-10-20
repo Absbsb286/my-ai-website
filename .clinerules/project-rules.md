@@ -57,7 +57,7 @@
 - Simpel untuk deploy di Vercel
 - Bisa edit cepat via Cline
 - Trade-off: tidak dapat manfaat Next.js (metadata, bundling, lint, typecheck)
-- 2.348 baris, 83 KB, IIFE (tanpa modul ES)
+- 3.861 baris, ±147 KB, IIFE (tanpa modul ES)
 
 ## Git Workflow
 - Branch main = production (Vercel auto-deploy)
@@ -78,15 +78,51 @@
 1. TURN evan-brass rate limit → multiplayer lintas device kadang gagal
 2. Bug guest-guest: pemain kadang tidak lihat nama pemain lain
 3. ✅ Kredensial MQTT/TURN sudah dipindahkan ke server (Next.js API proxy)
-4. Bug fungsional: tombol Pause mati, host migration tidak ada, dll.
+4. ✅ Tombol Pause (solo) + host migration dasar sudah diperbaiki (f89bc92, 8c54565)
 5. Belum ada anti-cheat: skor dikirim klien & dipercaya host
 
 ## Rencana Perbaikan (dari analisis OpenCode)
 1. ✅ Pindahkan kredensial ke server (Next.js API proxy) — SELESAI
-2. Setup Twilio TURN (gratis $15) — untuk multiplayer stabil
-3. Fix bug fungsional (Pause, host migration, dll.)
-4. Anti-cheat minimal (validasi skor ekstrem di host)
-5. Migrasi ke App Router Next.js (route /game) — jangka panjang
+2. ✅ Bug fungsional utama (koneksi, akhir race, hasil, host migration) — SELESAI 21 Okt 2026
+3. Anti-cheat minimal (validasi skor ekstrem di host) — prioritas berikutnya
+4. Migrasi game ke route Next.js /game — jangka panjang
+5. Terakhir/opsional: TURN berbayar (Twilio, dsb.)
+   - JANGAN pakai layanan berbayar untuk project ini.
+   - Pakai TURN gratis (OpenRelay/Metered) atau coturn self-host
+     hanya kalau STUN saja benar-benar tidak cukup.
+
+## Bug Hasil Audit (20 Okt 2026) — Status 21 Okt 2026
+
+### ✅ Sudah diperbaiki
+1. Timer koneksi (`netSetTimeout`) sekarang dilacak dan dibatalkan di
+   `netCleanup`. `net.connected` hanya di-set oleh hello/roster, bukan timer.
+   Peringatan "Room belum ditemukan" akhirnya benar-benar tampil di detik 8.
+2. Cleanup punya nomor urut (`_cleanupSeq`): klik "Keluar" lalu langsung
+   "Buat/Gabung Room" tidak bisa dihapus oleh cleanup lama yang telat selesai.
+3. Guest tidak lagi diam di akhir race: host mengirim `over` ulang
+   (400/1200/2500 ms), guest punya fallback ranking lokal setelah 4 detik,
+   dan `showResult` hanya sekali (koin/bonus tidak dobel).
+4. `getOver` memvalidasi pengirim + seed race, dan mengabaikan duplikat.
+5. Roster host membersihkan pemain ghost dari daftar guest.
+6. Host migration memilih dari peer yang masih terhubung, bukan ghost.
+7. Layar hasil memakai tinggi baris adaptif; 6+ pemain tidak menabrak teks
+   koin/tombol. Pemain yang tidak ada di ranking tidak lagi default "MENANG".
+8. Countdown 3 detik (tidak sempat menampilkan "4"), skor/posisi remote
+   di-reset saat mulai, dan remote player disembunyikan selama countdown.
+9. Pause solo menghentikan musik; resume menyalakannya lagi.
+10. Sub-scene (MP menu, join, waiting, settings, skins) memakai background
+    menu tanpa tombol menu utama, jadi tidak ada tombol "hantu" di belakang.
+11. `console.log` debug dihapus; meta `mobile-web-app-capable` ditambahkan.
+
+### Catatan / sisa
+- Metadata `layout.tsx` TIDAK mojibake. Judulnya memang memakai em dash
+  U+2014; tampilan "�?" hanya artefak alat baca. Tidak perlu diubah.
+- Anti-cheat belum ada: peer bisa memalsukan `state`/`start`/`over`.
+- Platform bergerak masih dihitung per-client (bisa drift sedikit).
+- `BONUS_LAST_STANDING` diberikan ke semua yang masih hidup — cek apakah
+  memang desain yang diinginkan.
+- Nama pemain guest-guest perlu diverifikasi ulang di device nyata.
+- TURN evan-brass masih bisa rate limit; TURN berbayar tetap prioritas terakhir.
 
 ## Aturan untuk AI Agent
 - Baca file ini setiap sesi baru

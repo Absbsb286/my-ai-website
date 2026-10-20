@@ -21,9 +21,9 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Repo: https://github.com/Absbsb286/my-ai-website
 
 ## File Utama
-- public/bloby.html — file game utama (2.348 baris, single-file HTML+JS)
+- public/bloby.html — file game utama (3.861 baris, single-file HTML+JS)
 - src/app/page.tsx — hanya redirect ke /bloby.html
-- src/app/layout.tsx — metadata (perlu diperbaiki)
+- src/app/layout.tsx — metadata (sudah benar; title/OG memakai em dash)
 - auto-push.js — script auto-commit & push (pantau src/ dan public/)
 - .clinerules/project-rules.md — aturan detail untuk Cline
 
@@ -48,10 +48,15 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 
 ## Prioritas Perbaikan (dari analisis)
 1. ✅ Pindahkan kredensial MQTT/TURN ke server (proxy Next.js) — SELESAI
-2. Setup Twilio TURN untuk multiplayer stabil
-3. Fix bug fungsional (Pause, host migration, dll.)
-4. Anti-cheat minimal
-5. Migrasi ke App Router Next.js
+2. ✅ Bug fungsional utama (koneksi, akhir race, hasil, host migration) — SELESAI 21 Okt 2026
+   - Sisa catatan kecil: drift platform bergerak antar-client, aturan
+     BONUS_LAST_STANDING, dan verifikasi nama guest-guest.
+3. Anti-cheat minimal (prioritas berikutnya)
+4. Migrasi game ke route Next.js (/game) — jangka panjang
+5. Terakhir/opsional: TURN berbayar (Twilio, dsb.)
+   - JANGAN pakai layanan berbayar untuk project ini.
+   - Kalau butuh TURN tambahan, pakai yang gratis (OpenRelay/Metered)
+     atau coturn self-host di VM gratis.
 
 ## Kontak Konteks
 - Untuk konteks lengkap, baca .clinerules/project-rules.md
