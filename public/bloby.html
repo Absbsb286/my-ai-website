@@ -2281,8 +2281,9 @@ const GO_RETRY = { x: W/2-120, y: 420, w: 240, h: 52 };
 const GO_MENU  = { x: W/2-120, y: 486, w: 240, h: 44 };
 
 // Result scene buttons: Main Lagi (kembali ke waiting), Keluar Room
-const RESULT_REPLAY = { x: W/2-120, y: 560, w: 240, h: 52 };
-const RESULT_LEAVE  = { x: W/2-120, y: 620, w: 240, h: 44 };
+// Diperlebar jarak: REPLAY y=540, LEAVE y=610 (gap 18px)
+const RESULT_REPLAY = { x: W/2-120, y: 540, w: 240, h: 52 };
+const RESULT_LEAVE  = { x: W/2-120, y: 610, w: 240, h: 44 };
 
 // REK 3: param fs opsional + auto-fit agar label muat di tombol sempit.
 // Semua pemanggil lama (3 argumen) tidak berubah perilaku.
@@ -2519,6 +2520,11 @@ function drawWaitingScene(){
   ctx.fillStyle = '#FFF7E0';
   ctx.fillText(net.isHost ? '🏠 Room Kamu' : '⏳ Menunggu Host', W/2, 90);
 
+  // Indicator: race continuation (same room)
+  ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(168,255,205,0.85)';
+  ctx.fillText('🔄 Race selesai — room sama, main lagi!', W/2, 112);
+
   ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.fillText('Kode Room:', W/2, 130);
@@ -2739,8 +2745,30 @@ function drawResultScene(){
   ctx.fillText('Total koin: ' + totalCoins, W/2, 515);
 
   // Tombol: Main Lagi (kembali ke lobby) & Keluar Room
+  // Main Lagi = primary (kuning), Keluar Room = danger (merah transparan)
   drawBigBtn(RESULT_REPLAY, '▶ Main Lagi', true);
-  drawBigBtn(RESULT_LEAVE,  '🚪 Keluar Room', false);
+  
+  // Custom draw untuk Keluar Room - warna merah danger
+  ctx.save();
+  const r = RESULT_LEAVE;
+  const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y+r.h);
+  g.addColorStop(0, 'rgba(255,107,107,0.35)');
+  g.addColorStop(1, 'rgba(255,60,60,0.25)');
+  ctx.fillStyle = g;
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,107,107,0.6)';
+  ctx.lineWidth = 1.6;
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.stroke();
+  ctx.font = '600 17px Fredoka, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFB4B4';
+  ctx.fillText('🚪 Keluar Room', r.x+r.w/2, r.y+r.h/2+0.5);
+  ctx.restore();
+  
+  // Hint text
+  ctx.font = '11px Fredoka, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('Main Lagi = tetap di room  |  Keluar Room = pindah ke menu', W/2, 675);
 
   ctx.restore();
 }
@@ -3085,6 +3113,31 @@ function setScene(s){
   state = s;
   if (s === 'waiting'){ waitScroll = 0; waitDragY = null; waitDragId = null; }
   if (s === 'waiting') startLobbyHeartbeat(); else stopLobbyHeartbeat();
+  
+  // DEBUG: log scene change
+  console.log('[setScene]', s, 'net.room:', !!net.room, 'net.connected:', net.connected, 'net.mode:', net.mode);
+  
+  // Jika ke waiting tapi room hilang (disconnect saat race), coba reconnect
+  if (s === 'waiting' && net.mode !== 'solo' && !net.room && net.roomCode){
+    console.log('[setScene] Room lost, attempting reconnect to:', net.roomCode);
+    net.connecting = true;
+    net.status = 'Koneksi terputus, reconnect...';
+    loadNetworkConfig().then(() => {
+      return loadTrystero().then(({joinRoom}) => {
+        net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
+        setupRoomHandlers();
+        setTimeout(() => {
+          try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+        }, 400);
+      });
+    }).catch(e => {
+      console.error('[setScene] Reconnect failed:', e);
+      net.status = 'Reconnect gagal: ' + e.message;
+      setTimeout(() => { netCleanup(); setScene('mpMenu'); }, 2000);
+    });
+    return; // tunggu reconnect
+  }
+  
   if (s === 'join'){
     roomInput.style.display = 'block';
     roomInput.value = '';
@@ -3138,10 +3191,12 @@ canvas.addEventListener('pointerdown', function(e){
   if (state === 'result'){
     // Main Lagi -> kembali ke waiting room (lobby)
     if (pointInRect(lx,ly,RESULT_REPLAY)){
+      console.log('[Result] Main Lagi clicked -> setScene(waiting)');
       sfxToggle(); setScene('waiting'); return;
     }
     // Keluar Room -> benar-benar keluar room ke menu multiplayer
     if (pointInRect(lx,ly,RESULT_LEAVE)){
+      console.log('[Result] Keluar Room clicked -> netCleanup + mpMenu');
       sfxToggle(); netCleanup(); setScene('mpMenu'); return;
     }
     return;
