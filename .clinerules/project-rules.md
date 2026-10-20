@@ -77,12 +77,12 @@
 ## Masalah yang Sedang Dihadapi
 1. TURN evan-brass rate limit → multiplayer lintas device kadang gagal
 2. Bug guest-guest: pemain kadang tidak lihat nama pemain lain
-3. Kredensial MQTT/TURN masih hardcoded di bloby.html (risiko keamanan)
+3. ✅ Kredensial MQTT/TURN sudah dipindahkan ke server (Next.js API proxy)
 4. Bug fungsional: tombol Pause mati, host migration tidak ada, dll.
 5. Belum ada anti-cheat: skor dikirim klien & dipercaya host
 
 ## Rencana Perbaikan (dari analisis OpenCode)
-1. Pindahkan kredensial ke server (Next.js API proxy) — PRIORITAS
+1. ✅ Pindahkan kredensial ke server (Next.js API proxy) — SELESAI
 2. Setup Twilio TURN (gratis $15) — untuk multiplayer stabil
 3. Fix bug fungsional (Pause, host migration, dll.)
 4. Anti-cheat minimal (validasi skor ekstrem di host)

@@ -171,31 +171,34 @@ function genRoomCode(){
   return c;
 }
 
-/* ---------- EMQX Serverless broker (replaces Trystero's default public relays) ----------
-   Trystero 0.21.3 has no separate username/password option for the broker:
-   credentials are embedded in the relay URL (wss://user:pass@host:port/path).
-   mqtt.js parses them out of the URL and sends them in the MQTT CONNECT
-   packet; the WebSocket connection itself carries no credentials. */
-const EMQX_WS_URL =
-  'wss://blobbyuser:BlobbyJelly2026!@c616191f.ala.asia-southeast1.emqxsl.com:8084/mqtt';
-const EMQX_ROOM_CONFIG = {
-  appId: 'blobby-jelly-v1',
-  relayUrls: [EMQX_WS_URL],
-  rtcConfig: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      {
-        urls: [
-          'turn:turn.evan-brass.net:3478?transport=udp',
-          'turn:turn.evan-brass.net:3478?transport=tcp'
-        ],
-        username: 'user',
-        credential: 'password'
+/* ---------- Network Config (loaded from server-side API) ----------
+   Credentials are kept server-side (.env.local) and served via /api/config.
+   This prevents API keys from being exposed in client-side code. */
+let EMQX_ROOM_CONFIG = null;
+
+async function loadNetworkConfig() {
+  if (EMQX_ROOM_CONFIG) return EMQX_ROOM_CONFIG;
+  try {
+    const res = await fetch('/api/config', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Config fetch failed: ' + res.status);
+    EMQX_ROOM_CONFIG = await res.json();
+    return EMQX_ROOM_CONFIG;
+  } catch (e) {
+    console.error('Failed to load network config:', e);
+    // Fallback ke config minimal (tanpa TURN) agar game solo tetap jalan
+    EMQX_ROOM_CONFIG = {
+      appId: 'blobby-jelly-v1',
+      relayUrls: ['wss://broker.emqx.io:8084/mqtt'],
+      rtcConfig: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
       }
-    ]
+    };
+    return EMQX_ROOM_CONFIG;
   }
-};
+}
 
 async function loadTrystero(){
   if (net.module) return net.module;
@@ -272,6 +275,7 @@ async function createRoom(){
   setScene('waiting');
 
   try {
+    await loadNetworkConfig();
     const {joinRoom} = await loadTrystero();
     net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();
@@ -305,6 +309,7 @@ async function joinRoomNet(code){
   setScene('waiting');
 
   try {
+    await loadNetworkConfig();
     const {joinRoom} = await loadTrystero();
     net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
     setupRoomHandlers();

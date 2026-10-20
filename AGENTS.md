@@ -47,7 +47,7 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - JANGAN hapus .gitignore
 
 ## Prioritas Perbaikan (dari analisis)
-1. Pindahkan kredensial MQTT/TURN ke server (proxy Next.js)
+1. ✅ Pindahkan kredensial MQTT/TURN ke server (proxy Next.js) — SELESAI
 2. Setup Twilio TURN untuk multiplayer stabil
 3. Fix bug fungsional (Pause, host migration, dll.)
 4. Anti-cheat minimal
