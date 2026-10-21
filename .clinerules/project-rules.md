@@ -57,7 +57,25 @@
 - Simpel untuk deploy di Vercel
 - Bisa edit cepat via Cline
 - Trade-off: tidak dapat manfaat Next.js (metadata, bundling, lint, typecheck)
-- 3.861 baris, ±147 KB, IIFE (tanpa modul ES)
+- 4.311 baris, ±164 KB, IIFE (tanpa modul ES)
+
+## Fitur Profil Pemain (21 Okt 2026)
+- Scope: nama tampilan + warna teks nama; tanpa avatar/emoji.
+- Nama 2–10 karakter; spasi dan tanda baca umum boleh, emoji/karakter kontrol dibuang.
+- 6 warna dari palet game; warna teks tidak mengubah warna jelly.
+- Entry: chip nama + ikon pensil di menu; scene `profile`; input HTML
+  `#nameInput` di atas canvas. Tidak ada entry saat race.
+- Simpan ke `blobby_name` / `blobby_name_color`; nama duplikat boleh,
+  penanda `(kamu)` di waiting dan hasil.
+- Sinkronisasi: `nameColor` di hello/roster/state/ranking; warna peer
+  dinormalisasi ke palet; nama remote di-clip maks 10 saat digambar.
+- Test 21 Okt 2026: desktop 1000×900 + viewport 390×844; batas 10,
+  emoji, error <2/empty, simpan/batal/persist; 2 origin (localhost vs
+  127.0.0.1) untuk localStorage terpisah; nama sama "NebulaJell" coral/mint;
+  warna benar di waiting, HUD, label remote, dan layar hasil; tanpa error JS.
+- Belum diuji: 2 device fisik, 3 pemain guest-guest, dan anti-cheat
+  nama/warna. Warning MQTT keepalive pernah muncul setelah reload tab yang
+  masih terhubung room (bukan dari fitur profil).
 
 ## Git Workflow
 - Branch main = production (Vercel auto-deploy)
@@ -76,7 +94,7 @@
 
 ## Masalah yang Sedang Dihadapi
 1. TURN evan-brass rate limit → multiplayer lintas device kadang gagal
-2. Bug guest-guest: pemain kadang tidak lihat nama pemain lain
+2. Bug guest-guest (3 pemain) belum diverifikasi; host-guest + nama/warna sudah lolos
 3. ✅ Kredensial MQTT/TURN sudah dipindahkan ke server (Next.js API proxy)
 4. ✅ Tombol Pause (solo) + host migration dasar sudah diperbaiki (f89bc92, 8c54565)
 5. Belum ada anti-cheat: skor dikirim klien & dipercaya host
@@ -127,6 +145,7 @@
   setelah 8 detik (tidak lagi ditutupi status connected palsu).
 - Production: penanda kode baru ada, buat room + guest join berhasil,
   tanpa error console.
+- Profil pemain: detail test ada di bagian "Fitur Profil Pemain".
 - Catatan: ini test 2 tab di satu laptop, bukan 2 device fisik. Skenario
   3 pemain (guest-guest) belum diuji.
 
@@ -138,6 +157,8 @@
 - `BONUS_LAST_STANDING` diberikan ke semua yang masih hidup — cek apakah
   memang desain yang diinginkan.
 - Nama pemain guest-guest perlu diverifikasi ulang di device nyata.
+- Profil: 3 pemain guest-guest + 2 device fisik belum diuji; nama/warna
+  belum punya anti-cheat (warna dinormalisasi, nama digambar di canvas).
 - TURN evan-brass masih bisa rate limit; TURN berbayar tetap prioritas terakhir.
 
 ## Aturan untuk AI Agent

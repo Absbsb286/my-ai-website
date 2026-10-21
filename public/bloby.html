@@ -40,12 +40,29 @@
     background:rgba(7,9,24,0.85);color:#FFD02E;border:2px solid #FFD02E;
     border-radius:12px;outline:none;font-family:'Space Mono',monospace;z-index:100;
   }
+  #nameInput{
+    display:none;position:fixed;z-index:100;box-sizing:border-box;
+    padding:0 14px;margin:0;
+    font-family:Fredoka,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    font-weight:600;font-size:20px;text-align:center;letter-spacing:0.3px;
+    background:rgba(7,9,24,0.9);color:#FFD02E;
+    border:1px solid rgba(255,247,224,0.18);border-radius:12px;
+    outline:none;caret-color:#FFD02E;touch-action:manipulation;
+    -webkit-user-select:text;user-select:text;
+    transition:border-color 160ms ease-out,background-color 160ms ease-out;
+  }
+  #nameInput::placeholder{color:rgba(255,247,224,0.55);}
+  #nameInput:focus{border-color:#FFD02E;background:rgba(7,9,24,0.97);}
+  #nameInput.invalid{border-color:rgba(255,107,107,0.85);}
+  #nameInput.invalid:focus{border-color:#FF6B6B;}
+  #nameInput::selection{background:rgba(255,208,46,0.3);color:#FFF7E0;}
   @media (pointer:coarse){canvas{border-radius:0;box-shadow:none;}}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXXX">
+<input id="nameInput" maxlength="10" autocomplete="nickname" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Nama kamu" aria-label="Nama tampilan">
 <script>
 (function(){
 'use strict';
@@ -54,6 +71,7 @@ const W = 400, H = 700;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
 const roomInput = document.getElementById('roomInput');
+const nameInput = document.getElementById('nameInput');
 const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
 function resize(){
@@ -64,6 +82,7 @@ function resize(){
   canvas.width  = Math.round(W*s*dpr);
   canvas.height = Math.round(H*s*dpr);
   ctx.setTransform(s*dpr, 0, 0, s*dpr, 0, 0);
+  if (nameInput.style.display === 'block') placeNameInput();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', ()=>setTimeout(resize, 200));
@@ -134,12 +153,67 @@ function saveSkins(){
 }
 function getSkin(id){ return SKINS.find(s=>s.id===id) || SKINS[0]; }
 
+/* ---------- Profil: nama + warna nama ---------- */
+const NAME_MAX = 10;
+const DEFAULT_NAME_COLOR = '#FFD02E';
+const NAME_COLORS = [
+  { hex:'#FFD02E', label:'Kuning' },
+  { hex:'#7DF5A5', label:'Mint'   },
+  { hex:'#8FD0FF', label:'Biru'   },
+  { hex:'#FF9E9E', label:'Coral'  },
+  { hex:'#C9A7FF', label:'Ungu'   },
+  { hex:'#FFF7E0', label:'Putih'  }
+];
+function normalizeNameColor(value){
+  const v = String(value || '').toLowerCase();
+  const hit = NAME_COLORS.find(c => c.hex.toLowerCase() === v);
+  return hit ? hit.hex : DEFAULT_NAME_COLOR;
+}
+function nameColorOf(p){
+  return normalizeNameColor(p && p.nameColor);
+}
+// Buang emoji, karakter kontrol/format, dan bidi. Tanda baca biasa tetap boleh.
+const NAME_EMOJI = /[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3]/gu;
+function stripNameHazards(value){
+  return String(value || '').normalize('NFC')
+    .replace(NAME_EMOJI, '')
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, '')
+    .replace(/\s+/g, ' ');
+}
+function cleanName(value){
+  return stripNameHazards(value).trim();
+}
+// Versi saat mengetik: spasi di ujung kiri dibuang, spasi di ujung kanan
+// dipertahankan supaya pengguna bisa mengetik nama dua kata.
+function cleanNameTyping(value){
+  return stripNameHazards(value).replace(/^\s+/, '');
+}
+function clipName(value, max){
+  return Array.from(String(value == null ? '' : value)).slice(0, max || NAME_MAX).join('');
+}
+function validateName(value){
+  const clean = cleanName(value);
+  const len = Array.from(clean).length;
+  if (!len) return { ok:false, value:'', error:'Nama tidak boleh kosong.' };
+  if (len < 2) return { ok:false, value:clean, error:'Minimal 2 karakter.' };
+  if (len > NAME_MAX) return { ok:false, value:clipName(clean), error:'Maksimal ' + NAME_MAX + ' karakter.' };
+  return { ok:true, value:clean, error:'' };
+}
+
 let myName = '';
 try{ myName = localStorage.getItem('blobby_name') || ''; }catch(e){}
-if (!myName){
+myName = clipName(cleanName(myName), NAME_MAX);
+if (Array.from(myName).length < 2){
   myName = 'Pemain' + Math.floor(Math.random()*9000+1000);
   try{ localStorage.setItem('blobby_name', myName); }catch(e){}
+} else {
+  try{ localStorage.setItem('blobby_name', myName); }catch(e){}
 }
+let myNameColor = DEFAULT_NAME_COLOR;
+try{ myNameColor = normalizeNameColor(localStorage.getItem('blobby_name_color')); }catch(e){}
+let nameDraft = myName;
+let colorDraft = myNameColor;
+let nameError = '';
 
 function haptic(p){ if(!settings.haptic || !navigator.vibrate) return; try{ navigator.vibrate(p); }catch(e){} }
 
@@ -288,6 +362,11 @@ async function netCleanup(){
   net.roomCode = '';
   net.status = '';
   net.lastSend = 0;
+  // Identitas di-cache untuk menghemat paket state. Saat pindah room,
+  // cache harus kosong supaya nama/warna baru tidak dianggap "sudah terkirim".
+  net._lastSentName = null;
+  net._lastSentNameColor = null;
+  net._lastSentSkin = null;
   net.raceSeed = 1;
   if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
   // Keluar dari room = sesi race selesai. Tanpa ini, indikator
@@ -312,14 +391,14 @@ function startLobbyHeartbeat(){
     if (state === 'waiting'){
       if (net.isHost) broadcastRoster();
       else {
-        try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+        try { net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
       }
     } else if (state === 'race'){
       // Saat race: semua pemain kirim hello berkala agar nama pulih walau
       // paket hello awal hilang (MQTT QoS 0). Interval 2 dtk cukup —
       // identitas per-tick sudah dihemat via broadcastState.
       if (net.mode === 'solo'){ stopLobbyHeartbeat(); return; }
-      try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+      try { net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
     }
   }, 2000);
 }
@@ -354,7 +433,7 @@ async function createRoom(){
 
     net.players[net.myId] = {
       x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
-      powerTimer:0, alive:true, name: myName, skin: selectedSkin,
+      powerTimer:0, alive:true, name: myName, nameColor: myNameColor, skin: selectedSkin,
       ready:true, isMe:true, isHost:true
     };
 
@@ -411,12 +490,12 @@ async function joinRoomNet(code){
 
     net.players[net.myId] = {
       x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
-      powerTimer:0, alive:true, name: myName, skin: selectedSkin,
+      powerTimer:0, alive:true, name: myName, nameColor: myNameColor, skin: selectedSkin,
       ready:true, isMe:true, isHost:false
     };
 
     netSetTimeout(() => {
-      try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: false}); } catch(e){}
+      try { net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: false}); } catch(e){}
     }, 400);
   } catch(e){
     if (seq !== net._cleanupSeq) return;
@@ -495,7 +574,7 @@ function promoteAfterHostLeave(){
     net.isHost = true;
     net.status = '👑 Host keluar — kamu jadi host baru';
     try {
-      net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: true});
+      net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: true});
     } catch(e){}
     if (state === 'waiting') setTimeout(() => broadcastRoster(), 100);
   } else {
@@ -521,7 +600,7 @@ function setupRoomHandlers(){
   net.actions = { sendHello, sendState, sendStart, sendStartAck, sendOver, sendRoster };
 
   room.onPeerJoin((peerId) => {
-    try { sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}, peerId); } catch(e){}
+    try { sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: net.isHost}, peerId); } catch(e){}
     if (net.isHost){
       setTimeout(() => { try { sendRoster({list: rosterList()}, peerId); } catch(e){} }, 200);
     }
@@ -551,12 +630,14 @@ function setupRoomHandlers(){
     if (existing){
       // Jangan overwrite nama/skin yang sudah benar dengan nilai kosong.
       if (data.name && String(data.name).trim() !== '') existing.name = data.name;
+      if (data.nameColor) existing.nameColor = normalizeNameColor(data.nameColor);
       if (data.skin && data.skin !== '') existing.skin = data.skin;
       if (typeof data.isHost !== 'undefined') existing.isHost = data.isHost;
     } else {
       net.players[data.id] = {
         x: W/2, y: START_Y, vx:0, vy:0, score:0, coinCount:0,
-        powerTimer:0, alive:true, name: data.name, skin: data.skin,
+        powerTimer:0, alive:true, name: data.name,
+        nameColor: normalizeNameColor(data.nameColor), skin: data.skin,
         ready:true, isMe:false, isHost: data.isHost, history: []
       };
     }
@@ -607,7 +688,7 @@ function setupRoomHandlers(){
         if (!net.players[net.myId]){
           net.players[net.myId] = {
             x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0,
-            powerTimer:0, alive:true, name: myName, skin: selectedSkin,
+            powerTimer:0, alive:true, name: myName, nameColor: myNameColor, skin: selectedSkin,
             ready:true, isMe:true, isHost:false, history: []
           };
         } else {
@@ -620,6 +701,7 @@ function setupRoomHandlers(){
         // Update identitas saja, jangan sentuh posisi/skor (getState yang menang).
         // Jangan overwrite nama yang sudah benar dengan nilai kosong.
         if (p.name && String(p.name).trim() !== '') ex.name = p.name;
+        if (p.nameColor) ex.nameColor = normalizeNameColor(p.nameColor);
         if (p.skin && p.skin !== '') ex.skin = p.skin;
         if (typeof p.isHost !== 'undefined') ex.isHost = p.isHost;
         ex.isMe = false;
@@ -628,6 +710,7 @@ function setupRoomHandlers(){
           x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0,
           powerTimer:0, alive:true,
           name: (p.name && String(p.name).trim() !== '') ? p.name : 'Pemain',
+          nameColor: normalizeNameColor(p.nameColor),
           skin: p.skin || 'classic',
           ready:true, isMe:false, isHost: !!p.isHost, history: []
         };
@@ -660,7 +743,8 @@ function setupRoomHandlers(){
         x: data.x || 0, y: data.y || 0, vx: data.vx || 0, vy: data.vy || 0,
         score: data.score || 0, coinCount: data.coinCount || 0,
         powerTimer: 0, alive: true,
-        name: 'Pemain', skin: 'classic',
+        name: 'Pemain', nameColor: normalizeNameColor(data.nameColor),
+        skin: 'classic',
         isMe: false, isHost: false,
         history: []
       };
@@ -677,6 +761,9 @@ function setupRoomHandlers(){
       p.alive = data.alive;
       if (data.name && String(data.name).trim() !== '') {
         p.name = data.name;
+      }
+      if (data.nameColor) {
+        p.nameColor = normalizeNameColor(data.nameColor);
       }
       if (data.skin && data.skin !== '') {
         p.skin = data.skin;
@@ -752,6 +839,7 @@ function rosterList(){
   return Object.keys(net.players).map(pid => ({
     id: pid,
     name: net.players[pid].name,
+    nameColor: net.players[pid].nameColor,
     skin: net.players[pid].skin,
     ready: net.players[pid].ready,
     isHost: net.players[pid].isHost
@@ -766,7 +854,7 @@ function broadcastRoster(){
 function broadcastState(){
   if (!net.actions.sendState) return;
   try {
-    // name/skin hanya ikut saat berubah (identitas rutin via hello/roster).
+    // name/skin/warna nama hanya ikut saat berubah (identitas rutin via hello/roster).
     // Paket tick 30Hz jadi lebih ramping -> jitter berkurang di jaringan lemot.
     const pkt = {
       id: net.myId,
@@ -775,6 +863,7 @@ function broadcastState(){
       alive: !raceState.localDead && raceState.phase === 'playing'
     };
     if (myName !== net._lastSentName){ pkt.name = myName; net._lastSentName = myName; }
+    if (myNameColor !== net._lastSentNameColor){ pkt.nameColor = myNameColor; net._lastSentNameColor = myNameColor; }
     if (selectedSkin !== net._lastSentSkin){ pkt.skin = selectedSkin; net._lastSentSkin = selectedSkin; }
     net.actions.sendState(pkt);
   } catch(e){}
@@ -1114,7 +1203,8 @@ function endRaceHost(){
 /* Ranking dipakai host dan juga fallback guest kalau paket hasil hilang. */
 function buildRanking(){
   const arr = Object.keys(net.players).map(pid => ({
-    id: pid, name: net.players[pid].name, skin: net.players[pid].skin,
+    id: pid, name: net.players[pid].name, nameColor: net.players[pid].nameColor,
+    skin: net.players[pid].skin,
     score: net.players[pid].score, alive: net.players[pid].alive
   }));
   arr.sort((a,b) => {
@@ -2287,13 +2377,14 @@ function drawRemotePlayers(){
     ctx.save();
     ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    const tw = ctx.measureText(p.name).width;
+    const label = clipName(p.name, NAME_MAX);
+    const tw = ctx.measureText(label).width;
     const ty = ip.y - camY - 40;
     ctx.fillStyle = 'rgba(7,9,24,0.72)';
     roundRect(ip.x - tw/2 - 6, ty - 9, tw + 12, 16, 8); ctx.fill();
-    ctx.fillStyle = '#FFD02E';
+    ctx.fillStyle = nameColorOf(p);
     ctx.textBaseline = 'middle';
-    ctx.fillText(p.name, ip.x, ty);
+    ctx.fillText(label, ip.x, ty);
     ctx.restore();
   });
 }
@@ -2415,7 +2506,8 @@ function drawRaceHUD(){
 
     const lb = Object.keys(net.players).map(pid => ({
       id: pid,
-      name: net.players[pid].name,
+      name: clipName(net.players[pid].name, NAME_MAX),
+      nameColor: net.players[pid].nameColor,
       score: net.players[pid].score,
       alive: net.players[pid].alive,
       isMe: pid === net.myId
@@ -2437,9 +2529,9 @@ function drawRaceHUD(){
       const y = lbY + 8 + i * rowH + rowH/2;
       ctx.font = (p.isMe ? 'bold ' : '') + '12px Fredoka, system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillStyle = p.alive ? (p.isMe ? '#FFD02E' : '#FFF7E0') : 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = p.alive ? nameColorOf(p) : 'rgba(255,255,255,0.4)';
       const medal = i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : (i+1) + '. ';
-      ctx.fillText(medal + p.name.slice(0, 12), lbX + 8, y);
+      ctx.fillText(medal + p.name, lbX + 8, y);
       ctx.textAlign = 'right';
       ctx.fillStyle = p.alive ? '#FFF7E0' : 'rgba(255,255,255,0.5)';
       ctx.fillText(p.alive ? String(p.score) : '💀', lbX + lbW - 8, y);
@@ -2536,6 +2628,8 @@ const MENU_MP   = { x: W/2-120, y: 520, w: 240, h: 50 };
 const MENU_SKIN = { x: W/2-120, y: 580, w: 115, h: 40 };
 const MENU_SET  = { x: W/2+5, y: 580, w: 115, h: 40 };
 const MENU_HELP = { x: W-58, y: 14, w: 44, h: 44 };
+// Target sentuh 44px: visual chip tetap ringkas, area tap lebih lega.
+const MENU_PROFILE = { x: W/2-100, y: 399, w: 200, h: 44 };
 
 // Tutorial overlay (sekali di run pertama + tombol bantuan di menu).
 const TUT_START = { x: W/2-110, y: 520, w: 220, h: 50 };
@@ -2569,6 +2663,17 @@ const PAUSE_MENU   = { x: W/2-110, y: H/2+100, w: 220, h: 44 };
 const RESULT_REPLAY = { x: W/2-120, y: 540, w: 240, h: 52 };
 const RESULT_LEAVE  = { x: W/2-120, y: 610, w: 240, h: 44 };
 
+// Profil pemain: input nama memakai overlay HTML supaya caret & seleksi native.
+const PROFILE_INPUT = { x: 70, y: 328, w: 260, h: 50 };
+const PROFILE_SAVE = { x: W/2-120, y: 508, w: 240, h: 52 };
+const PROFILE_CANCEL = { x: W/2-120, y: 572, w: 240, h: 44 };
+const PROFILE_COLOR_Y = 462;
+function profileSwatchRect(i){
+  const gap = 40;
+  const cx = W/2 + (i - (NAME_COLORS.length-1)/2) * gap;
+  return { x: cx-22, y: PROFILE_COLOR_Y-22, w: 44, h: 44 };
+}
+
 // REK 3: param fs opsional + auto-fit agar label muat di tombol sempit.
 // Semua pemanggil lama (3 argumen) tidak berubah perilaku.
 function drawBigBtn(r, label, primary, fs){
@@ -2597,6 +2702,149 @@ function drawBigBtn(r, label, primary, fs){
   ctx.fillStyle = primary ? '#2A1500' : '#FFF7E0';
   ctx.fillText(label, r.x+r.w/2, r.y+r.h/2+0.5);
   ctx.restore();
+}
+
+/* ---------- Profil: ikon & interaksi ---------- */
+function drawPencilIcon(cx, cy, size, color){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-Math.PI/4);
+  const w = size*0.36, h = size*0.78;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.2, size*0.13);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/2);
+  ctx.lineTo(w/2, -h/2);
+  ctx.lineTo(w/2, h*0.12);
+  ctx.lineTo(0, h/2);
+  ctx.lineTo(-w/2, h*0.12);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h*0.08);
+  ctx.lineTo(w/2, -h*0.08);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-w/2, h*0.12);
+  ctx.lineTo(0, h/2);
+  ctx.lineTo(w/2, h*0.12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCheckIcon(cx, cy, size, color){
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.8, size*0.18);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx-size*0.36, cy+size*0.02);
+  ctx.lineTo(cx-size*0.08, cy+size*0.30);
+  ctx.lineTo(cx+size*0.42, cy-size*0.28);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function updateNameInputAppearance(){
+  nameInput.style.color = colorDraft;
+  nameInput.style.caretColor = colorDraft;
+  nameInput.classList.toggle('invalid', !!nameError);
+}
+
+function placeNameInput(){
+  if (state !== 'profile') return;
+  const r = canvas.getBoundingClientRect();
+  const sx = r.width / W, sy = r.height / H;
+  const fieldH = PROFILE_INPUT.h * sy;
+  const h = Math.max(38, fieldH);
+  nameInput.style.left = (r.left + PROFILE_INPUT.x * sx) + 'px';
+  nameInput.style.top = (r.top + PROFILE_INPUT.y * sy + (fieldH - h)/2) + 'px';
+  nameInput.style.width = (PROFILE_INPUT.w * sx) + 'px';
+  nameInput.style.height = h + 'px';
+  // 16px minimum mencegah iOS auto-zoom saat input difokuskan.
+  nameInput.style.fontSize = Math.max(16, Math.round(20 * sx)) + 'px';
+  nameInput.style.padding = '0 ' + Math.max(6, Math.round(14 * sx)) + 'px';
+}
+
+function openProfile(){
+  if (state !== 'menu') return;
+  setScene('profile');
+}
+
+function onNameInput(e){
+  if (e && e.isComposing) return;
+  const limited = clipName(cleanNameTyping(nameInput.value), NAME_MAX);
+  if (nameInput.value !== limited) nameInput.value = limited;
+  nameDraft = limited;
+  const v = validateName(limited);
+  nameError = v.error;
+  updateNameInputAppearance();
+}
+
+function selectNameColor(i){
+  const c = NAME_COLORS[i];
+  if (!c) return;
+  colorDraft = c.hex;
+  updateNameInputAppearance();
+  sfxToggle();
+  haptic(8);
+}
+
+function syncProfileToNet(){
+  const me = net.players && net.players[net.myId];
+  if (me){
+    me.name = myName;
+    me.nameColor = myNameColor;
+  }
+  // Paksa state tick berikutnya membawa identitas baru bila rename terjadi
+  // saat masih terhubung ke room (mis. dari menu setelah host migration).
+  net._lastSentName = null;
+  net._lastSentNameColor = null;
+  if (!net.room || !net.actions || !net.actions.sendHello) return;
+  try {
+    net.actions.sendHello({
+      id: net.myId, name: myName, nameColor: myNameColor,
+      skin: selectedSkin, isHost: net.isHost
+    });
+  } catch(e){}
+  if (net.isHost) broadcastRoster();
+}
+
+function saveProfile(){
+  const v = validateName(nameInput.value);
+  if (!v.ok){
+    nameError = v.error;
+    updateNameInputAppearance();
+    haptic([10, 20, 10]);
+    if (state === 'profile'){ try { nameInput.focus(); } catch(e){} }
+    return;
+  }
+  myName = v.value;
+  myNameColor = normalizeNameColor(colorDraft);
+  nameDraft = myName;
+  colorDraft = myNameColor;
+  nameError = '';
+  nameInput.value = myName;
+  updateNameInputAppearance();
+  try{
+    localStorage.setItem('blobby_name', myName);
+    localStorage.setItem('blobby_name_color', myNameColor);
+  }catch(e){}
+  syncProfileToNet();
+  sfxToggle();
+  haptic(15);
+  setScene('menu');
+}
+
+function cancelProfile(){
+  nameDraft = myName;
+  colorDraft = myNameColor;
+  nameError = '';
+  setScene('menu');
+  sfxToggle();
 }
 
 /* ============================================================
@@ -2670,11 +2918,10 @@ function drawMenuScene(dt, backgroundOnly){
   if (!backgroundOnly){
     ctx.save();
     ctx.textAlign='center';
+    drawMenuProfileChip();
     ctx.font='bold 12px Fredoka, system-ui, -apple-system, sans-serif';
-    ctx.fillStyle='rgba(255,255,255,0.75)';
-    ctx.fillText('👤 ' + myName, W/2, 425);
     ctx.fillStyle='rgba(255,224,102,0.95)';
-    ctx.fillText('💰 ' + totalCoins + ' koin', W/2, 442);
+    ctx.fillText('💰 ' + totalCoins + ' koin', W/2, 449);
     ctx.restore();
 
     drawBigBtn(MENU_SOLO, '🎯 Solo', true);
@@ -2693,6 +2940,32 @@ function drawMenuScene(dt, backgroundOnly){
   }
   // Hanya tampil di menu utama, bukan saat menu dipakai sebagai latar scene lain.
   if (!backgroundOnly && state === 'menu' && !tutorialOpen) drawMenuHelpButton();
+}
+
+function drawMenuProfileChip(){
+  const label = clipName(myName, NAME_MAX);
+  ctx.save();
+  ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
+  const tw = ctx.measureText(label).width;
+  const iconSize = 12;
+  const gap = 7;
+  const contentW = tw + gap + iconSize;
+  const chipW = Math.max(84, contentW + 24);
+  const chipH = 28;
+  const chipX = W/2 - chipW/2;
+  const chipY = 405;
+  ctx.fillStyle = 'rgba(255,247,224,0.055)';
+  roundRect(chipX, chipY, chipW, chipH, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,247,224,0.18)';
+  ctx.lineWidth = 1;
+  roundRect(chipX, chipY, chipW, chipH, 14); ctx.stroke();
+  const startX = chipX + (chipW - contentW)/2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = myNameColor;
+  ctx.fillText(label, startX, chipY + chipH/2 + 0.5);
+  drawPencilIcon(startX + tw + gap + iconSize/2, chipY + chipH/2, iconSize, 'rgba(255,208,46,0.9)');
+  ctx.restore();
 }
 
 function drawMenuHelpButton(){
@@ -2843,6 +3116,105 @@ function drawJoinScene(){
   drawBigBtn(JOIN_BACK, '← Kembali', false);
 }
 
+function drawDisabledBtn(r, label){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,247,224,0.06)';
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,247,224,0.12)';
+  ctx.lineWidth = 1.4;
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.stroke();
+  ctx.font = '600 18px Fredoka, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,247,224,0.42)';
+  ctx.fillText(label, r.x+r.w/2, r.y+r.h/2+0.5);
+  ctx.restore();
+}
+
+function drawProfileScene(){
+  drawMenuScene(0, true);
+  ctx.save();
+  ctx.fillStyle = 'rgba(7,9,22,0.9)';
+  ctx.fillRect(0,0,W,H);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 30px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillText('PROFIL PEMAIN', W/2+2, 90);
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText('PROFIL PEMAIN', W/2, 88);
+  ctx.font = '12px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.68)';
+  ctx.fillText('Nama dan warna ini tampil saat race.', W/2, 116);
+
+  // Pratinjau nameplate seperti label di atas jelly saat race.
+  const cleanDraft = cleanName(nameDraft);
+  const previewName = clipName(cleanDraft || 'Nama kamu', NAME_MAX);
+  const previewColor = cleanDraft ? colorDraft : 'rgba(255,247,224,0.55)';
+  ctx.font = 'bold 16px Fredoka, system-ui, -apple-system, sans-serif';
+  const tagW = Math.max(104, ctx.measureText(previewName).width + 28);
+  const tagH = 34, tagY = 148;
+  ctx.fillStyle = 'rgba(8,11,26,0.84)';
+  roundRect(W/2-tagW/2, tagY, tagW, tagH, tagH/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,247,224,0.14)';
+  ctx.lineWidth = 1;
+  roundRect(W/2-tagW/2, tagY, tagW, tagH, tagH/2); ctx.stroke();
+  ctx.fillStyle = previewColor;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(previewName, W/2, tagY+tagH/2+1);
+
+  // Shadow + karakter: satu-satunya elevasi di scene ini.
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(W/2, 286, 42, 9, 0, 0, 6.283);
+  ctx.fill();
+  drawCharacter(W/2, 236, 78, false, 1, 0, selectedSkin);
+
+  // Form nama.
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText('Nama tampilan', 70, 316);
+  ctx.textAlign = 'right';
+  ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.55)';
+  ctx.fillText(Array.from(nameDraft).length + '/' + NAME_MAX, 330, 316);
+
+  ctx.textAlign = 'left';
+  ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = nameError ? '#FF9E9E' : 'rgba(255,247,224,0.55)';
+  ctx.fillText(nameError || '2–10 karakter. Tanpa emoji.', 70, 398);
+
+  // Warna nama.
+  const selectedColor = NAME_COLORS.find(c => c.hex === colorDraft) || NAME_COLORS[0];
+  ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText('Warna nama', 70, 430);
+  ctx.textAlign = 'right';
+  ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(255,247,224,0.55)';
+  ctx.fillText(selectedColor.label, 330, 430);
+
+  NAME_COLORS.forEach((c, i) => {
+    const rect = profileSwatchRect(i);
+    const cx = rect.x + rect.w/2, cy = rect.y + rect.h/2;
+    const selected = c.hex === colorDraft;
+    if (selected){
+      ctx.strokeStyle = 'rgba(255,247,224,0.9)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 6.283); ctx.stroke();
+    }
+    ctx.fillStyle = c.hex;
+    ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 6.283); ctx.fill();
+    if (selected) drawCheckIcon(cx, cy, 14, '#0B1020');
+  });
+  ctx.restore();
+
+  const v = validateName(nameDraft);
+  if (v.ok) drawBigBtn(PROFILE_SAVE, 'Simpan', true);
+  else drawDisabledBtn(PROFILE_SAVE, 'Simpan');
+  drawBigBtn(PROFILE_CANCEL, 'Batal', false);
+}
+
 // REK 4: state scroll daftar pemain (reset tiap masuk waiting).
 // REK 5: copyRoomCode + feedback "Tersalin!" (clipboard + fallback).
 let waitScroll = 0, waitScrollMax = 0, waitDragY = null, waitDragId = null;
@@ -2978,9 +3350,16 @@ function drawWaitingScene(){
     ctx.beginPath(); ctx.arc(W/2-120, y+1, 9, 0, 6.283); ctx.fill();
 
     ctx.font = (isMe ? 'bold ' : '') + '13px Fredoka, system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = isMe ? '#FFD02E' : '#FFF7E0';
+    ctx.fillStyle = nameColorOf(p);
     ctx.textAlign = 'left';
-    ctx.fillText(p.name + (isMe ? ' (kamu)' : ''), W/2-104, y+5);
+    const roomName = clipName(p.name || 'Pemain', NAME_MAX);
+    ctx.fillText(roomName, W/2-104, y+5);
+    if (isMe){
+      const nameW = ctx.measureText(roomName).width;
+      ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,247,224,0.55)';
+      ctx.fillText(' (kamu)', W/2-104 + nameW, y+5);
+    }
 
     ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'right';
@@ -3126,10 +3505,26 @@ function drawResultScene(){
     ctx.fillStyle = cols[1];
     ctx.beginPath(); ctx.arc(W/2-100, y, dotR, 0, 6.283); ctx.fill();
 
+    const marker = isMe ? ' (kamu)' : '';
+    const markerFs = Math.max(9, nameFs - 4);
+    const fullName = clipName(p.name || 'Pemain', NAME_MAX);
+    ctx.font = markerFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
+    const markerW = marker ? ctx.measureText(marker).width : 0;
     ctx.font = 'bold ' + nameFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = isMe ? '#FFD02E' : '#FFF7E0';
-    const label = String(p.name || 'Pemain').slice(0, isMe ? 9 : 12) + (isMe ? ' (kamu)' : '');
-    ctx.fillText(label, W/2-80, y+1);
+    let nameText = fullName;
+    while (Array.from(nameText).length > 1
+        && ctx.measureText(nameText + '…').width + markerW > 132){
+      nameText = Array.from(nameText).slice(0, -1).join('');
+    }
+    if (nameText !== fullName) nameText += '…';
+    ctx.fillStyle = nameColorOf(p);
+    ctx.fillText(nameText, W/2-80, y+1);
+    if (marker){
+      const nameW = ctx.measureText(nameText).width;
+      ctx.font = markerFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,247,224,0.55)';
+      ctx.fillText(marker, W/2-80 + nameW, y+1);
+    }
 
     ctx.textAlign = 'right';
     ctx.font = 'bold ' + nameFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3299,6 +3694,7 @@ function render(dt){
   if (shake > 0) ctx.translate(rand(-shake,shake)*0.5, rand(-shake,shake)*0.5);
 
   if (state === 'menu') drawMenuScene(dt);
+  else if (state === 'profile') drawProfileScene();
   else if (state === 'mpMenu') drawMPMenuScene();
   else if (state === 'join') drawJoinScene();
   else if (state === 'waiting') drawWaitingScene();
@@ -3432,6 +3828,11 @@ window.addEventListener('keydown', function(e){
     if (k===' '||k==='Enter'){ closeTutorial(true); e.preventDefault(); return; }
     return;
   }
+  if (state === 'profile'){
+    if (k==='Escape'){ cancelProfile(); e.preventDefault(); return; }
+    if (k==='Enter'){ saveProfile(); e.preventDefault(); return; }
+    return;
+  }
   if ((k==='p'||k==='P'||k==='Escape') && state === 'race' && net.mode === 'solo'){
     togglePause(); e.preventDefault(); return;
   }
@@ -3470,7 +3871,7 @@ function hitBtn(lx,ly){
 function startSolo(){
   net.mode = 'solo';
   net.players = {};
-  net.players[net.myId] = { x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0, powerTimer:0, alive:true, name:myName, skin:selectedSkin, ready:true, isMe:true };
+  net.players[net.myId] = { x:W/2, y:START_Y, vx:0, vy:0, score:0, coinCount:0, powerTimer:0, alive:true, name:myName, nameColor:myNameColor, skin:selectedSkin, ready:true, isMe:true };
   raceState.localDead = false;
   raceState.myBonus = 0;
   raceState.lastEarnedCoins = 0;
@@ -3510,6 +3911,7 @@ function startRace(isMulti){
     });
     net.players[net.myId] = net.players[net.myId] || {};
     const p = net.players[net.myId];
+    p.name = myName; p.nameColor = myNameColor;
     p.x = player.x; p.y = player.y; p.vx = 0; p.vy = 0;
     p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
     p.isMe = true;
@@ -3628,6 +4030,31 @@ function setScene(s){
     roomInput.blur();
   }
 
+  // Overlay nama hanya tampil di scene profil. Di mobile tidak autofocus
+  // supaya keyboard tidak langsung menutupi swatch warna dan tombol Simpan.
+  if (s === 'profile'){
+    nameDraft = myName;
+    colorDraft = myNameColor;
+    nameError = '';
+    nameInput.value = myName;
+    updateNameInputAppearance();
+    nameInput.style.display = 'block';
+    placeNameInput();
+    requestAnimationFrame(placeNameInput);
+    if (!isTouch){
+      setTimeout(() => {
+        if (state !== 'profile') return;
+        try {
+          nameInput.focus();
+          nameInput.setSelectionRange(nameInput.value.length, nameInput.value.length);
+        } catch(e){}
+      }, 80);
+    }
+  } else {
+    nameInput.style.display = 'none';
+    nameInput.blur();
+  }
+
   // Reconnect hanya kalau room sebelumnya memang sudah tersambung.
   // Saat create/join pertama net.connecting masih true, jadi jangan
   // dianggap sebagai "room hilang" (dulu ini memicu joinRoom dua kali).
@@ -3641,7 +4068,7 @@ function setScene(s){
         net.room = joinRoom(EMQX_ROOM_CONFIG, net.roomCode);
         setupRoomHandlers();
         setTimeout(() => {
-          try { net.actions.sendHello({id: net.myId, name: myName, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
+          try { net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
         }, 400);
       });
     }).catch(e => {
@@ -3664,8 +4091,18 @@ canvas.addEventListener('pointerdown', function(e){
     return;
   }
 
+  if (state === 'profile'){
+    for (let i=0; i<NAME_COLORS.length; i++){
+      if (pointInRect(lx,ly,profileSwatchRect(i))){ selectNameColor(i); return; }
+    }
+    if (pointInRect(lx,ly,PROFILE_SAVE)){ saveProfile(); return; }
+    if (pointInRect(lx,ly,PROFILE_CANCEL)){ cancelProfile(); return; }
+    return;
+  }
+
   if (state === 'menu'){
     if (pointInRect(lx,ly,MENU_HELP)){ sfxToggle(); openTutorial(false); return; }
+    if (pointInRect(lx,ly,MENU_PROFILE)){ sfxToggle(); openProfile(); return; }
     if (pointInRect(lx,ly,MENU_SOLO)){ sfxToggle(); requestSolo(); return; }
     if (pointInRect(lx,ly,MENU_MP)){ sfxToggle(); setScene('mpMenu'); return; }
     if (pointInRect(lx,ly,MENU_SKIN)){ sfxToggle(); returnState='menu'; setScene('skins'); return; }
@@ -3848,6 +4285,20 @@ roomInput.addEventListener('keydown', e => {
     const code = (roomInput.value||'').trim().toUpperCase();
     if (code.length === 6){ joinRoomNet(code); }
     else { net.status = 'Kode harus 6 huruf'; }
+  }
+});
+
+nameInput.addEventListener('input', onNameInput);
+nameInput.addEventListener('compositionend', onNameInput);
+nameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    e.stopPropagation();
+    saveProfile();
+  } else if (e.key === 'Escape'){
+    e.preventDefault();
+    e.stopPropagation();
+    cancelProfile();
   }
 });
 

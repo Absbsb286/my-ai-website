@@ -21,7 +21,7 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Repo: https://github.com/Absbsb286/my-ai-website
 
 ## File Utama
-- public/bloby.html — file game utama (3.861 baris, single-file HTML+JS)
+- public/bloby.html — file game utama (4.311 baris, single-file HTML+JS)
 - src/app/page.tsx — hanya redirect ke /bloby.html
 - src/app/layout.tsx — metadata (sudah benar; title/OG memakai em dash)
 - auto-push.js — script auto-commit & push (pantau src/ dan public/)
@@ -31,7 +31,14 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 1. Game multiplayer P2P pakai Trystero (WebRTC)
 2. Signaling via EMQX Serverless MQTT (WebSocket port 8084)
 3. TURN server: evan-brass.net (untuk WiFi ketat seperti kampus)
-4. State sync 15Hz, interpolasi 100ms delay
+4. State sync 30Hz, interpolasi 100ms delay
+
+## Profil Pemain
+- Nama 2–10 karakter, tanpa emoji; 6 pilihan warna teks nama.
+- Diubah lewat chip nama + ikon pensil di menu utama; tidak bisa saat race.
+- Disimpan di `localStorage['blobby_name']` dan `localStorage['blobby_name_color']`.
+- `nameColor` ikut `hello`/`roster`/`state`/ranking; warna dari peer dinormalisasi.
+- Nama duplikat diizinkan; penanda `(kamu)` ada di daftar waiting dan hasil.
 
 ## Konvensi Kode
 - Tailwind CSS untuk styling
@@ -64,6 +71,9 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 
 ## Testing
 - Status 21 Okt 2026: alur room/race/hasil/replay/host migration lolos di 2 tab lokal + production
+- Profil 21 Okt 2026: desktop + viewport mobile, batas 10 karakter, sanitasi emoji,
+  simpan/batal/persistensi, nama duplikat + `(kamu)`, sinkron warna di waiting,
+  HUD, label remote, dan layar hasil (2 origin lokal) — lolos.
 - Setelah edit bloby.html: test di Chrome Incognito
 - Multiplayer: test 2 tab dulu, baru lintas device
 - Test TURN: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
