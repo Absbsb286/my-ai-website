@@ -73,7 +73,8 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Status 21 Okt 2026: alur room/race/hasil/replay/host migration lolos di 2 tab lokal + production
 - Profil 21 Okt 2026: desktop + viewport mobile, batas 10 karakter, sanitasi emoji,
   simpan/batal/persistensi, nama duplikat + `(kamu)`, sinkron warna di waiting,
-  HUD, label remote, dan layar hasil (2 origin lokal) — lolos.
+  HUD, label remote, layar hasil (2 origin lokal), dan production
+  (scene profil + simpan/persist) — lolos.
 - Setelah edit bloby.html: test di Chrome Incognito
 - Multiplayer: test 2 tab dulu, baru lintas device
 - Test TURN: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/

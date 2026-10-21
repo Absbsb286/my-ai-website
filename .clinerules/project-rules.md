@@ -73,6 +73,8 @@
   emoji, error <2/empty, simpan/batal/persist; 2 origin (localhost vs
   127.0.0.1) untuk localStorage terpisah; nama sama "NebulaJell" coral/mint;
   warna benar di waiting, HUD, label remote, dan layar hasil; tanpa error JS.
+- Production alias (setelah deploy 7389b4d): scene profil terbuka, simpan
+  "Produksi"/mint, persist setelah reload, tanpa error console.
 - Belum diuji: 2 device fisik, 3 pemain guest-guest, dan anti-cheat
   nama/warna. Warning MQTT keepalive pernah muncul setelah reload tab yang
   masih terhubung room (bukan dari fitur profil).
