@@ -63,6 +63,9 @@
 <canvas id="game"></canvas>
 <input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXXX">
 <input id="nameInput" maxlength="10" autocomplete="nickname" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Nama kamu" aria-label="Nama tampilan">
+<!-- Data + render karakter dipisah supaya fase 2 (kostum, idle, trail) tidak membengkakkan file utama. -->
+<script src="/game/characters.js"></script>
+<script src="/game/character-fx.js"></script>
 <script>
 (function(){
 'use strict';
@@ -117,7 +120,7 @@ const BONUS_LAST_STANDING = 100;
 const BONUS_WINNER = 50;
 
 /* ---------- Settings ---------- */
-let settings = { music:true, sfx:true, haptic:true };
+let settings = { music:true, sfx:true, haptic:true, trail:true };
 try{ const s = localStorage.getItem('blobby_settings'); if(s) Object.assign(settings, JSON.parse(s)); }catch(e){}
 function saveSettings(){ try{ localStorage.setItem('blobby_settings', JSON.stringify(settings)); }catch(e){} }
 
@@ -131,19 +134,23 @@ function markTutorialSeen(){
   try{ localStorage.setItem('blobby_tutorial_seen', '1'); }catch(e){}
 }
 
-/* ---------- Skins ---------- */
-const SKINS = [
-  { id:'classic',  name:'Classic',   cost:0,    colors:['#b3ecff','#5b8cf7','#3a4fd8'] },
-  { id:'ninja',    name:'Ninja',     cost:500,  colors:['#5a5a5a','#2a2a2a','#0a0a0a'] },
-  { id:'astro',    name:'Astronot',  cost:1000, colors:['#FFF7E0','#d0d8e0','#8090a0'] },
-  { id:'chef',     name:'Chef',      cost:1500, colors:['#FFF7E0','#f0f0f0','#d62828'] },
-  { id:'detektif', name:'Detektif',  cost:2000, colors:['#d8b57a','#8a5a2b','#4a2e10'] }
-];
+/* ---------- Karakter ---------- */
+// Data, bentuk, dan animasi karakter ada di public/game/characters.js.
+// Nama field jaringan tetap `skin` agar client versi lama tidak rusak.
+const CHARACTERS = (window.BlobbyCharacters && window.BlobbyCharacters.list) || [];
+const SKINS = CHARACTERS; // alias untuk kode lama
+if (!CHARACTERS.length) console.error('[Blobby] characters.js gagal dimuat.');
+
 let totalCoins = 0, unlockedSkins = ['classic'], selectedSkin = 'classic';
 try{ totalCoins = parseInt(localStorage.getItem('blobby_coins')||'0',10)||0; }catch(e){}
-try{ const s = localStorage.getItem('blobby_skins'); if(s) unlockedSkins = JSON.parse(s);
-     if(!unlockedSkins.includes('classic')) unlockedSkins.unshift('classic'); }catch(e){}
-try{ const s = localStorage.getItem('blobby_skin'); if(s && unlockedSkins.includes(s)) selectedSkin = s; }catch(e){}
+try{ const s = localStorage.getItem('blobby_skins'); if(s) unlockedSkins = JSON.parse(s); }catch(e){}
+// Buang id yang sudah tidak ada, lalu pastikan karakter dasar selalu terbuka.
+unlockedSkins = Array.isArray(unlockedSkins) ? unlockedSkins.filter(id => CHARACTERS.some(c=>c.id===id)) : [];
+if(!unlockedSkins.includes('classic')) unlockedSkins.unshift('classic');
+try{
+  const s = localStorage.getItem('blobby_skin');
+  if(s && unlockedSkins.includes(s) && CHARACTERS.some(c=>c.id===s)) selectedSkin = s;
+}catch(e){}
 function saveSkins(){
   try{
     localStorage.setItem('blobby_coins', String(totalCoins));
@@ -151,7 +158,10 @@ function saveSkins(){
     localStorage.setItem('blobby_skin', selectedSkin);
   }catch(e){}
 }
-function getSkin(id){ return SKINS.find(s=>s.id===id) || SKINS[0]; }
+function getSkin(id){
+  if (window.BlobbyCharacters) return window.BlobbyCharacters.get(id);
+  return SKINS[0] || { id:'classic', name:'Blobby', cost:0, colors:['#b3ecff','#5b8cf7','#3a4fd8'], shape:'blob', accent:'#8ee3ff', tagline:'Jelly klasik' };
+}
 
 /* ---------- Profil: nama + warna nama ---------- */
 const NAME_MAX = 10;
@@ -777,7 +787,8 @@ function setupRoomHandlers(){
   getStart((data, peerId) => {
     // Terima start dari lobby ATAU dari layar hasil. Dulu guest yang belum
     // menekan "Main Lagi" diabaikan, jadi ketinggalan race saat host mulai.
-    if (state !== 'waiting' && state !== 'result') return;
+    // 'characters' = picker dibuka dari lobby; host boleh mulai race saat itu.
+    if (state !== 'waiting' && state !== 'result' && state !== 'characters') return;
     if (!data || typeof data.seed === 'undefined') return;
 
     const senderId = net.peerIdToPlayerId[peerId] || '';
@@ -951,6 +962,7 @@ let player, platforms, coins, particles;
 let camY, topY, coinCount, coinsTotal, powerTimer, score, maxReach;
 let flash = 0, shake = 0, powerTextTimer = 0;
 let airJumpsLeft = 0;
+let landingGaze = { x: 0, y: 0.7 }; // arah mata ke platform pendaratan
 
 const raceState = {
   phase: 'idle',
@@ -986,6 +998,7 @@ function spawnPlatform(y){
   return p;
 }
 function resetGame(seed){
+  if (window.BlobbyCharacterFX) BlobbyCharacterFX.reset();
   if (seed != null) setSeed(seed);
   player = { x: W/2, y: START_Y, vx:0, vy:0, w:46, h:46, sq:1 };
   platforms = []; coins = []; particles = [];
@@ -996,11 +1009,111 @@ function resetGame(seed){
   keys.left = keys.right = false;
   drag.active = false; btnPointerId = null;
   airJumpsLeft = 1;
+  landingGaze = { x: 0, y: 0.7 };
   paused = false;
 
   platforms.push({ x:0, y:H-90, w:W, h:18, type:'base', vx:0 });
   topY = H - 90;
   for (let i=0;i<7;i++){ topY -= rngRange(85,122); spawnPlatform(topY); }
+}
+
+// Prediksi platform pendaratan dari lintasan balistik karakter. Ini membuat
+// mata bisa melihat ke atas/ahead saat melompat, bukan hanya ke bawah.
+function landingGazeFor(x, feetY, vy, vx){
+  const a = 0.5 * GRAV;
+  const b = vy || 0;
+  const vxv = vx || 0;
+  const rising = b < 0;
+  let best = null;
+
+  // 1) Prediksi pendaratan balistik saat turun. Ambang horizontal dilonggarkan
+  //    (dulu 18px) dan platform yang berlawanan arah gerak vx diberi penalti
+  //    alih-alih langsung dibuang.
+  for (const p of platforms){
+    if (!p) continue;
+    const c = feetY - p.y;
+    const disc = b*b - 4*a*c;
+    if (disc < 0) continue;
+    const t = (-b + Math.sqrt(disc)) / (2*a); // akar saat turun
+    if (!(t > 0.04)) continue;
+    if (b + 2*a*t <= 0) continue; // harus mengenai platform saat turun
+
+    const px = x + vxv * t;
+    const tx = clamp(px, p.x + 7, p.x + p.w - 7);
+    const dx = Math.abs(tx - px);
+    if (dx > 90) continue; // longgar, dulu 18
+
+    let gx = tx - x;
+    if (gx > W/2) gx -= W;
+    if (gx < -W/2) gx += W;
+    const against = (vxv !== 0) && (gx * vxv < 0);
+    const score = t + dx * 0.005 + (against ? 0.8 : 0);
+    if (!best || score < best.score) best = { gx, py: p.y, score };
+  }
+
+  // 2) Saat naik (vy < 0), utamakan platform di atas/ahead agar mata
+  //    melihat ke atas, bukan jatuh ke fallback platform bawah.
+  if (rising){
+    let above = null;
+    for (const p of platforms){
+      if (!p) continue;
+      const pcx = p.x + p.w/2;
+      let gx = pcx - x;
+      if (gx > W/2) gx -= W;
+      if (gx < -W/2) gx += W;
+      const dy = feetY - p.y; // positif = berada di atas
+      if (dy < 16) continue; // harus di atas garis mata, bukan tepat di kaki
+      if (dy > 280) continue; // di luar jangkauan lompatan
+      const dx = Math.abs(gx);
+      if (dx > W * 0.45) continue;
+      const against = (vxv !== 0) && (gx * vxv < 0);
+      const score = dy * 0.003 + dx * 0.002 + (against ? 1.2 : 0);
+      if (!above || score < above.score) above = { gx, py: p.y, score };
+    }
+    if (above) best = above; // override: lihat ke atas saat melompat
+    else best = null; // saat naik tanpa platform di atas, jangan pakai prediksi turun (bawah)
+  }
+
+  if (best){
+    const eyeY = feetY - 23;
+    const gy = (best.py - 8) - eyeY;
+    const len = Math.hypot(best.gx, gy) || 1;
+    return { x: best.gx / len, y: gy / len };
+  }
+
+  // Fallback saat naik: jangan pilih platform bawah; lihat ke atas.
+  if (rising){
+    return { x: clamp(vxv / MOVE_SPEED, -1, 1) * 0.5, y: -0.9 };
+  }
+
+  // Fallback: platform terdekat di bawah (mis. lintasan horizontal meleset).
+  let near = null;
+  const halfW = 14;
+  for (const p of platforms){
+    if (!p || p.y < feetY + 4) continue;
+    const tx = clamp(x, p.x + 7, p.x + p.w - 7);
+    const dx = Math.abs(tx - x);
+    const dy = p.y - feetY;
+    const overlaps = x + halfW > p.x && x - halfW < p.x + p.w;
+    const score = dy + dx * (overlaps ? 0.35 : 2.4);
+    if (!near || score < near.score) near = { tx, py: p.y, score };
+  }
+  if (near){
+    const eyeY = feetY - 23;
+    const gx = near.tx - x;
+    const gy = (near.py - 8) - eyeY;
+    const len = Math.hypot(gx, gy) || 1;
+    return { x: gx / len, y: gy / len };
+  }
+  return { x: clamp(vxv / MOVE_SPEED, -1, 1) * 0.5, y: (b < 0) ? -0.9 : 0.9 };
+}
+
+function updateLandingGaze(dt){
+  if (!player) return;
+  const target = landingGazeFor(player.x, player.y + player.h / 2, player.vy, player.vx);
+  const k = 1 - Math.exp(-Math.max(0, Math.min(dt, 0.05)) * 16);
+  landingGaze.x += (target.x - landingGaze.x) * k;
+  landingGaze.y += (target.y - landingGaze.y) * k;
 }
 
 function burst(x,y,color,n,spread){
@@ -1021,6 +1134,7 @@ function doJump(){
     player.sq = 0.78;
     sfxDJ(); haptic(15);
     burst(player.x, player.y + player.h/2, '#b3ecff', 10, 180);
+    if (window.BlobbyCharacterFX) BlobbyCharacterFX.burst(player.x, player.y + player.h/2, selectedSkin, 7);
   }
 }
 
@@ -1091,6 +1205,7 @@ function updateGame(dt){
       airJumpsLeft = 1;
       const col = hit.type === 'spring' ? '#7dffb0' : hit.type === 'moving' ? '#8fd0ff' : '#ffd98a';
       burst(player.x, hit.y, col, 7, 180);
+      if (window.BlobbyCharacterFX) BlobbyCharacterFX.burst(player.x, hit.y, selectedSkin, hit.type === 'spring' ? 12 : 6);
     }
   }
 
@@ -1100,6 +1215,8 @@ function updateGame(dt){
     if (p.x < 6){ p.x = 6; p.vx *= -1; }
     if (p.x + p.w > W-6){ p.x = W-6-p.w; p.vx *= -1; }
   }
+
+  updateLandingGaze(dt);
 
   if (powered){
     for (const c of coins){
@@ -2085,259 +2202,31 @@ function drawParticles(){
 }
 
 /* ============================================================
-   KARAKTER — Iron Man power-up
+   KARAKTER — render dipisah ke public/game/characters.js
    ============================================================ */
-function drawCharacter(x,y,size,powered,squash,vx,skinId,opacity){
-  const R = size/2, sq = squash||1;
-  const cols = getSkin(skinId).colors;
-  ctx.save();
-  if (opacity != null) ctx.globalAlpha = opacity;
-  ctx.translate(x,y); ctx.scale(1/sq, sq);
+function drawCharacter(x,y,size,powered,squash,vx,skinId,opacity,extra){
+  if (!window.BlobbyCharacters) return;
+  const o = extra || {};
+  window.BlobbyCharacters.draw(ctx, {
+    x, y, size, powered, squash, vx, skinId, opacity,
+    time: o.time != null ? o.time : performance.now(),
+    moveSpeed: MOVE_SPEED,
+    idle: !!o.idle,
+    detail: o.detail,
+    shadow: o.shadow,
+    gaze: o.gaze
+  });
+}
 
-  /* ---------- Magnetic Aura ---------- */
-  if (powered){
-    const t = performance.now() * 0.006;
-
-    ctx.save();
-    ctx.rotate(t);
-    ctx.strokeStyle = 'rgba(74,222,128,0.8)';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([9, 8]);
-    ctx.beginPath();
-    ctx.arc(0, 0, R*1.6, 0, 6.283);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-
-    ctx.save();
-    const ag = ctx.createRadialGradient(0, 0, R*0.7, 0, 0, R*2.0);
-    ag.addColorStop(0, 'rgba(255,208,46,0.45)');
-    ag.addColorStop(1, 'rgba(255,208,46,0)');
-    ctx.fillStyle = ag;
-    ctx.beginPath();
-    ctx.arc(0, 0, R*2.0, 0, 6.283);
-    ctx.fill();
-    ctx.restore();
-
-    for (let i=0; i<6; i++){
-      const a = t*2 + i*1.047;
-      const dist = R*1.25 + Math.sin(t*5 + i*1.3)*3;
-      const alpha = 0.4 + Math.sin(t*6 + i)*0.4;
-      ctx.fillStyle = 'rgba(255,226,122,' + alpha.toFixed(2) + ')';
-      ctx.beginPath();
-      ctx.arc(Math.cos(a)*dist, Math.sin(a)*dist, 1.6, 0, 6.283);
-      ctx.fill();
-    }
-  }
-
-  /* ---------- Body ---------- */
-  ctx.save();
-  if (powered){
-    ctx.shadowColor = '#FF4D4D';
-    ctx.shadowBlur = 30;
-  } else {
-    ctx.shadowColor = 'rgba(4,5,16,0.45)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-  }
-  const g = ctx.createRadialGradient(-R*0.34,-R*0.44,R*0.12,0,0,R*1.28);
-  if (powered){
-    g.addColorStop(0,    '#ff8080');
-    g.addColorStop(0.45, '#e01e1e');
-    g.addColorStop(0.85, '#a01010');
-    g.addColorStop(1,    '#5a0808');
-  } else {
-    g.addColorStop(0, cols[0]);
-    g.addColorStop(0.55, cols[1]);
-    g.addColorStop(1, cols[2]);
-  }
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, R, R*1.06, 0, 0, 6.283);
-  ctx.fill();
-  ctx.restore();
-
-  /* ---------- Armor Details ---------- */
-  if (powered){
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(0, 0, R, R*1.06, 0, 0, 6.283);
-    ctx.clip();
-
-    ctx.fillStyle = '#f5c518';
-    ctx.beginPath();
-    ctx.moveTo(-R*0.9,  -R*0.75);
-    ctx.lineTo(-R*0.5,  -R*0.95);
-    ctx.lineTo( R*0.5,  -R*0.95);
-    ctx.lineTo( R*0.9,  -R*0.75);
-    ctx.lineTo( R*0.7,  -R*0.58);
-    ctx.lineTo(-R*0.7,  -R*0.58);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.beginPath();
-    ctx.moveTo(-R*0.85, -R*0.82);
-    ctx.lineTo(-R*0.55, -R*0.9);
-    ctx.lineTo(-R*0.5,  -R*0.7);
-    ctx.lineTo(-R*0.75, -R*0.66);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#f5c518';
-    ctx.beginPath();
-    ctx.moveTo(-R*0.98, -R*0.15);
-    ctx.lineTo(-R*0.85, -R*0.45);
-    ctx.lineTo(-R*0.65, -R*0.30);
-    ctx.lineTo(-R*0.78,  0);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo( R*0.98, -R*0.15);
-    ctx.lineTo( R*0.85, -R*0.45);
-    ctx.lineTo( R*0.65, -R*0.30);
-    ctx.lineTo( R*0.78,  0);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#f5c518';
-    ctx.beginPath();
-    ctx.moveTo(-R*0.55, R*0.55);
-    ctx.lineTo( 0,      R*0.80);
-    ctx.lineTo( R*0.55, R*0.55);
-    ctx.lineTo( R*0.42, R*0.45);
-    ctx.lineTo( 0,      R*0.66);
-    ctx.lineTo(-R*0.42, R*0.45);
-    ctx.closePath();
-    ctx.fill();
-
-    const reactorY = R * 0.20;
-
-    ctx.fillStyle = '#1a1a1a';
-    ctx.beginPath();
-    ctx.arc(0, reactorY, R*0.22, 0, 6.283);
-    ctx.fill();
-
-    ctx.strokeStyle = '#999';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(0, reactorY, R*0.22, 0, 6.283);
-    ctx.stroke();
-
-    const rg = ctx.createRadialGradient(0, reactorY, 0, 0, reactorY, R*0.19);
-    rg.addColorStop(0,    '#FFF7E0');
-    rg.addColorStop(0.35, '#c9f0ff');
-    rg.addColorStop(0.7,  '#8ee3ff');
-    rg.addColorStop(1,    '#00a8ff');
-    ctx.fillStyle = rg;
-    ctx.beginPath();
-    ctx.arc(0, reactorY, R*0.19, 0, 6.283);
-    ctx.fill();
-
-    ctx.restore();
-
-    ctx.save();
-    ctx.shadowColor = '#8ee3ff';
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = 'rgba(200,240,255,0.85)';
-    ctx.beginPath();
-    ctx.arc(0, R*0.20, R*0.09, 0, 6.283);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  /* ---------- Feet ---------- */
-  ctx.fillStyle = powered ? '#5a0808' : cols[2];
-  ctx.beginPath(); ctx.ellipse(-R*0.45,R*1.0,R*0.28,R*0.16,0,0,6.283); ctx.fill();
-  ctx.beginPath(); ctx.ellipse( R*0.45,R*1.0,R*0.28,R*0.16,0,0,6.283); ctx.fill();
-
-  /* ---------- Fire Thrusters ---------- */
-  if (powered){
-    const flicker = 0.85 + Math.sin(performance.now()*0.02)*0.15;
-    for (let k = -1; k <= 1; k += 2){
-      const fx = k * R * 0.35;
-      const fy = R * 1.05;
-      const flameH = R * 0.85 * flicker * (0.9 + Math.random()*0.2);
-
-      const og = ctx.createLinearGradient(fx, fy, fx, fy + flameH);
-      og.addColorStop(0,   'rgba(255,180,60,0.95)');
-      og.addColorStop(0.4, 'rgba(255,110,20,0.75)');
-      og.addColorStop(1,   'rgba(255,80,20,0)');
-      ctx.fillStyle = og;
-      ctx.beginPath();
-      ctx.moveTo(fx - R*0.16, fy);
-      ctx.quadraticCurveTo(fx - R*0.10, fy + flameH*0.8, fx, fy + flameH);
-      ctx.quadraticCurveTo(fx + R*0.10, fy + flameH*0.8, fx + R*0.16, fy);
-      ctx.closePath();
-      ctx.fill();
-
-      const ig = ctx.createLinearGradient(fx, fy, fx, fy + flameH*0.7);
-      ig.addColorStop(0,   'rgba(255,255,255,1)');
-      ig.addColorStop(0.4, 'rgba(180,230,255,0.9)');
-      ig.addColorStop(1,   'rgba(100,180,255,0)');
-      ctx.fillStyle = ig;
-      ctx.beginPath();
-      ctx.moveTo(fx - R*0.09, fy);
-      ctx.quadraticCurveTo(fx - R*0.05, fy + flameH*0.5, fx, fy + flameH*0.65);
-      ctx.quadraticCurveTo(fx + R*0.05, fy + flameH*0.5, fx + R*0.09, fy);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-
-  /* ---------- Eyes ---------- */
-  const eyeY = -R*0.16, eyeDX = R*0.37;
-  const lookX = clamp((vx||0)/MOVE_SPEED,-1,1)*R*0.09;
-
-  if (powered){
-    ctx.save();
-    ctx.shadowColor = '#8ee3ff';
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = '#e8f8ff';
-    ctx.beginPath(); ctx.arc(-eyeDX, eyeY, R*0.31, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX, eyeY, R*0.31, 0, 6.283); ctx.fill();
-    ctx.restore();
-
-    ctx.fillStyle = '#1a3a5a';
-    ctx.beginPath(); ctx.arc(-eyeDX+lookX, eyeY+R*0.04, R*0.15, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX+lookX, eyeY+R*0.04, R*0.15, 0, 6.283); ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,255,255,1)';
-    ctx.beginPath(); ctx.arc(-eyeDX+lookX-R*0.05, eyeY-R*0.03, R*0.06, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX+lookX-R*0.05, eyeY-R*0.03, R*0.06, 0, 6.283); ctx.fill();
-  } else {
-    ctx.fillStyle = '#FFF7E0';
-    ctx.beginPath(); ctx.arc(-eyeDX, eyeY, R*0.31, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX, eyeY, R*0.31, 0, 6.283); ctx.fill();
-
-    ctx.fillStyle = '#10142A';
-    ctx.beginPath(); ctx.arc(-eyeDX+lookX, eyeY+R*0.04, R*0.155, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX+lookX, eyeY+R*0.04, R*0.155, 0, 6.283); ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,247,224,0.95)';
-    ctx.beginPath(); ctx.arc(-eyeDX+lookX-R*0.05, eyeY-R*0.02, R*0.055, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc( eyeDX+lookX-R*0.05, eyeY-R*0.02, R*0.055, 0, 6.283); ctx.fill();
-  }
-
-  /* ---------- Blush ---------- */
-  if (!powered){
-    ctx.fillStyle = 'rgba(255,110,140,0.38)';
-    ctx.beginPath(); ctx.ellipse(-R*0.64, R*0.24, R*0.19, R*0.12, 0, 0, 6.283); ctx.fill();
-    ctx.beginPath(); ctx.ellipse( R*0.64, R*0.24, R*0.19, R*0.12, 0, 0, 6.283); ctx.fill();
-  }
-
-  /* ---------- Mouth ---------- */
-  if (!powered){
-    ctx.strokeStyle = '#10142A';
-    ctx.lineWidth = 2.6;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(0, R*0.28, R*0.30, 0.16*Math.PI, 0.84*Math.PI);
-    ctx.stroke();
-  }
-
-  ctx.restore();
+function drawCharacterAvatar(x,y,size,skinId,extra){
+  if (!window.BlobbyCharacters) return;
+  const o = extra || {};
+  window.BlobbyCharacters.drawAvatar(ctx, {
+    x, y, size, skinId,
+    time: o.time != null ? o.time : performance.now(),
+    idle: o.idle !== false,
+    detail: o.detail
+  });
 }
 
 /* ---------- Entity Interpolation (remote players, 30Hz data -> 60fps render) ---------- */
@@ -2373,7 +2262,7 @@ function drawRemotePlayers(){
     const p = net.players[pid];
     if (!p || !p.alive) return;
     const ip = getInterpolatedPosition(pid); // posisi halus hasil interpolasi
-    drawCharacter(ip.x, ip.y - camY, 46, p.powerTimer > 0, 1, p.vx||0, p.skin||'classic');
+    drawCharacter(ip.x, ip.y - camY, 46, p.powerTimer > 0, 1, p.vx||0, p.skin||'classic', null, { gaze: landingGazeFor(ip.x, ip.y + 23, p.vy||0, p.vx||0) });
     ctx.save();
     ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
@@ -2624,8 +2513,8 @@ function drawPowerText(){
 
 const MENU_SOLO = { x: W/2-120, y: 460, w: 240, h: 50 };
 const MENU_MP   = { x: W/2-120, y: 520, w: 240, h: 50 };
-// REK 3 (Hallmark grid): SKIN & SET sebaris, 115+10+115 = 240 sejajar tombol lain.
-const MENU_SKIN = { x: W/2-120, y: 580, w: 115, h: 40 };
+// REK 3 (Hallmark grid): KARAKTER & SET sebaris, 115+10+115 = 240 sejajar tombol lain.
+const MENU_CHARACTER = { x: W/2-120, y: 580, w: 115, h: 40 };
 const MENU_SET  = { x: W/2+5, y: 580, w: 115, h: 40 };
 const MENU_HELP = { x: W-58, y: 14, w: 44, h: 44 };
 // Target sentuh 44px: visual chip tetap ringkas, area tap lebih lega.
@@ -2647,9 +2536,25 @@ const JOIN_BACK = { x: W/2-120, y: 522, w: 240, h: 44 };
 const WAIT_START = { x: W/2-120, y: 626, w: 240, h: 56 };
 const WAIT_LEAVE = { x: W/2-120, y: 570, w: 240, h: 44 };
 const WAIT_COPY  = { x: W/2+106, y: 158, w: 40, h: 40 };
+const WAIT_CHAR  = { x: W/2-100, y: 232, w: 200, h: 30 };
 
 const SET_BACK = { x: W/2-90, y: 480, w: 180, h: 44 };
-const SKIN_BACK_R = { x: W/2-90, y: 590, w: 180, h: 44 };
+const CHAR_BACK_R = { x: W/2-90, y: 590, w: 180, h: 44 };
+
+// Grid karakter: 3 kolom x 4 baris. Slot terakhir dipakai sebagai teaser fase 2.
+const CHAR_COLS = 3;
+const CHAR_CARD_W = 104;
+const CHAR_CARD_H = 70;
+const CHAR_GAP = 8;
+const CHAR_START_Y = 246;
+function characterCardRect(i){
+  const col = i % CHAR_COLS;
+  const row = Math.floor(i / CHAR_COLS);
+  const totalW = CHAR_COLS * CHAR_CARD_W + (CHAR_COLS - 1) * CHAR_GAP;
+  const x = (W - totalW) / 2 + col * (CHAR_CARD_W + CHAR_GAP);
+  const y = CHAR_START_Y + row * (CHAR_CARD_H + CHAR_GAP);
+  return { x, y, w: CHAR_CARD_W, h: CHAR_CARD_H };
+}
 
 const GO_RETRY = { x: W/2-120, y: 420, w: 240, h: 52 };
 const GO_MENU  = { x: W/2-120, y: 486, w: 240, h: 44 };
@@ -2798,11 +2703,13 @@ function syncProfileToNet(){
   if (me){
     me.name = myName;
     me.nameColor = myNameColor;
+    me.skin = selectedSkin;
   }
   // Paksa state tick berikutnya membawa identitas baru bila rename terjadi
   // saat masih terhubung ke room (mis. dari menu setelah host migration).
   net._lastSentName = null;
   net._lastSentNameColor = null;
+  net._lastSentSkin = null;
   if (!net.room || !net.actions || !net.actions.sendHello) return;
   try {
     net.actions.sendHello({
@@ -2811,6 +2718,53 @@ function syncProfileToNet(){
     });
   } catch(e){}
   if (net.isHost) broadcastRoster();
+}
+
+// Karakter bisa diganti langsung dari lobby tanpa keluar room.
+function syncSkinToNet(){
+  const me = net.players && net.players[net.myId];
+  if (me) me.skin = selectedSkin;
+  net._lastSentSkin = null;
+  if (!net.room || !net.actions || !net.actions.sendHello) return;
+  try {
+    net.actions.sendHello({
+      id: net.myId, name: myName, nameColor: myNameColor,
+      skin: selectedSkin, isHost: net.isHost
+    });
+  } catch(e){}
+  if (net.isHost) broadcastRoster();
+}
+
+function chooseCharacter(id){
+  const sk = getSkin(id);
+  if (!sk || sk.id !== id) return false;
+  const owned = unlockedSkins.includes(sk.id);
+  const selected = selectedSkin === sk.id;
+  if (selected) return true;
+
+  if (owned){
+    selectedSkin = sk.id;
+    saveSkins();
+    syncSkinToNet();
+    sfxToggle();
+    haptic(15);
+    return true;
+  }
+
+  if (totalCoins >= sk.cost){
+    totalCoins -= sk.cost;
+    unlockedSkins.push(sk.id);
+    selectedSkin = sk.id;
+    saveSkins();
+    syncSkinToNet();
+    sfxUnlock();
+    haptic([20,30,20,30,40]);
+    return true;
+  }
+
+  sfxToggle();
+  haptic([10,20,10]);
+  return false;
 }
 
 function saveProfile(){
@@ -2903,7 +2857,9 @@ function drawMenuScene(dt, backgroundOnly){
   }
 
   // ─── Layer 2: karakter Blobby ───
-  drawCharacter(W/2, by, 74, false, sq, 0, selectedSkin);
+  // Scene lain memakai menu sebagai latar (backgroundOnly). Jangan gambar
+  // karakter di sana supaya wajahnya tidak membayang di belakang form/overlay.
+  if (!backgroundOnly) drawCharacter(W/2, by, 74, false, sq, 0, selectedSkin);
 
   // ─── Layer 3: jelly di DEPAN karakter ───
   for (const j of jellyOrbit){
@@ -2926,7 +2882,7 @@ function drawMenuScene(dt, backgroundOnly){
 
     drawBigBtn(MENU_SOLO, '🎯 Solo', true);
     drawBigBtn(MENU_MP, '🌐 Multiplayer', true);
-    drawBigBtn(MENU_SKIN, '🎨 Skin: ' + getSkin(selectedSkin).name, false, 14);
+    drawBigBtn(MENU_CHARACTER, 'Karakter · ' + getSkin(selectedSkin).name, false, 14);
     drawBigBtn(MENU_SET,  '⚙ Pengaturan', false, 15);
 
     if (best > 0){
@@ -2949,8 +2905,10 @@ function drawMenuProfileChip(){
   const tw = ctx.measureText(label).width;
   const iconSize = 12;
   const gap = 7;
-  const contentW = tw + gap + iconSize;
-  const chipW = Math.max(84, contentW + 24);
+  const av = 20;
+  const avGap = 6;
+  const contentW = av + avGap + tw + gap + iconSize;
+  const chipW = Math.max(116, contentW + 24);
   const chipH = 28;
   const chipX = W/2 - chipW/2;
   const chipY = 405;
@@ -2960,11 +2918,12 @@ function drawMenuProfileChip(){
   ctx.lineWidth = 1;
   roundRect(chipX, chipY, chipW, chipH, 14); ctx.stroke();
   const startX = chipX + (chipW - contentW)/2;
+  drawCharacterAvatar(startX + av/2, chipY + chipH/2, av, selectedSkin, { idle:true });
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = myNameColor;
-  ctx.fillText(label, startX, chipY + chipH/2 + 0.5);
-  drawPencilIcon(startX + tw + gap + iconSize/2, chipY + chipH/2, iconSize, 'rgba(255,208,46,0.9)');
+  ctx.fillText(label, startX + av + avGap, chipY + chipH/2 + 0.5);
+  drawPencilIcon(startX + av + avGap + tw + gap + iconSize/2, chipY + chipH/2, iconSize, 'rgba(255,208,46,0.9)');
   ctx.restore();
 }
 
@@ -3143,7 +3102,7 @@ function drawProfileScene(){
   ctx.fillText('PROFIL PEMAIN', W/2, 88);
   ctx.font = '12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,247,224,0.68)';
-  ctx.fillText('Nama dan warna ini tampil saat race.', W/2, 116);
+  ctx.fillText('Nama, warna, dan karakter tampil saat race.', W/2, 116);
 
   // Pratinjau nameplate seperti label di atas jelly saat race.
   const cleanDraft = cleanName(nameDraft);
@@ -3166,7 +3125,7 @@ function drawProfileScene(){
   ctx.beginPath();
   ctx.ellipse(W/2, 286, 42, 9, 0, 0, 6.283);
   ctx.fill();
-  drawCharacter(W/2, 236, 78, false, 1, 0, selectedSkin);
+  drawCharacter(W/2, 240, 74, false, 1, 0, selectedSkin, null, { idle:true });
 
   // Form nama.
   ctx.textAlign = 'left';
@@ -3238,6 +3197,23 @@ function copyRoomCode(){
     } else fallbackCopy(code, done);
   } catch(e){ fallbackCopy(code, done); }
 }
+function drawWaitingCharacterChip(){
+  const r = WAIT_CHAR;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,247,224,0.055)';
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,247,224,0.18)';
+  ctx.lineWidth = 1;
+  roundRect(r.x, r.y, r.w, r.h, r.h/2); ctx.stroke();
+  drawCharacterAvatar(r.x+17, r.y+r.h/2, 20, selectedSkin, { idle:true });
+  ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFF7E0';
+  ctx.fillText('Karakter · ' + getSkin(selectedSkin).name, r.x+34, r.y+r.h/2+0.5);
+  drawPencilIcon(r.x+r.w-16, r.y+r.h/2, 12, 'rgba(255,208,46,0.9)');
+  ctx.restore();
+}
+
 function drawWaitingScene(){
   drawMenuScene(0, true);
   ctx.save();
@@ -3325,15 +3301,18 @@ function drawWaitingScene(){
   ctx.strokeStyle = '#FFF7E0';
   ctx.strokeRect(WAIT_COPY.x+12, WAIT_COPY.y+15, 12, 14);
 
-  const listY = 260;
+  // Kartu karakter: satu-satunya tempat kustomisasi saat sudah di lobby.
+  drawWaitingCharacterChip();
+
+  const listY = 286;
   ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   const players = Object.keys(net.players);
   ctx.fillText('Pemain (' + players.length + '):', W/2-140, listY);
 
-  // REK 4: daftar scroll dalam jendela klip (260..556), tombol sticky di bawah.
-  const listTop = 268, listBot = 556, listRowH = 38;
+  // REK 4: daftar scroll dalam jendela klip (286..556), tombol sticky di bawah.
+  const listTop = 294, listBot = 556, listRowH = 38;
   waitScrollMax = Math.max(0, 30 + players.length*listRowH - (listBot - listTop));
   waitScroll = clamp(waitScroll, 0, waitScrollMax);
   ctx.save();
@@ -3345,20 +3324,21 @@ function drawWaitingScene(){
     ctx.fillStyle = isMe ? 'rgba(255,224,102,0.12)' : 'rgba(255,255,255,0.06)';
     roundRect(W/2-140, y-14, 280, 30, 8); ctx.fill();
 
-    const cols = getSkin(p.skin).colors;
-    ctx.fillStyle = cols[1];
-    ctx.beginPath(); ctx.arc(W/2-120, y+1, 9, 0, 6.283); ctx.fill();
+    // Avatar mini karakter, bukan titik warna lagi.
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath(); ctx.arc(W/2-120, y+1, 13, 0, 6.283); ctx.fill();
+    drawCharacterAvatar(W/2-120, y+1, 20, p.skin, { idle:true });
 
     ctx.font = (isMe ? 'bold ' : '') + '13px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle = nameColorOf(p);
     ctx.textAlign = 'left';
     const roomName = clipName(p.name || 'Pemain', NAME_MAX);
-    ctx.fillText(roomName, W/2-104, y+5);
+    ctx.fillText(roomName, W/2-100, y+5);
     if (isMe){
       const nameW = ctx.measureText(roomName).width;
       ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
       ctx.fillStyle = 'rgba(255,247,224,0.55)';
-      ctx.fillText(' (kamu)', W/2-104 + nameW, y+5);
+      ctx.fillText(' (kamu)', W/2-100 + nameW, y+5);
     }
 
     ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3501,9 +3481,9 @@ function drawResultScene(){
     ctx.fillStyle = '#FFF7E0';
     ctx.fillText(medal, W/2-140, y+1);
 
-    const cols = getSkin(p.skin).colors;
-    ctx.fillStyle = cols[1];
-    ctx.beginPath(); ctx.arc(W/2-100, y, dotR, 0, 6.283); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath(); ctx.arc(W/2-100, y, dotR+2, 0, 6.283); ctx.fill();
+    drawCharacterAvatar(W/2-100, y, Math.max(14, Math.min(20, dotR*1.7)), p.skin, { idle:false });
 
     const marker = isMe ? ' (kamu)' : '';
     const markerFs = Math.max(9, nameFs - 4);
@@ -3580,7 +3560,8 @@ function drawResultScene(){
 const SETTINGS_ITEMS = [
   { id:'music', label:'🎵 Musik' },
   { id:'sfx',   label:'🔊 Efek Suara' },
-  { id:'haptic',label:'📳 Getaran' }
+  { id:'haptic',label:'📳 Getaran' },
+  { id:'trail', label:'✨ Trail Karakter' }
 ];
 function settingsItemRect(i){
   const w = 280, h = 44, gap = 12, startY = 240;
@@ -3626,67 +3607,182 @@ function drawSettingsScene(){
   drawBigBtn(SET_BACK, '← Kembali', false);
 }
 
-function skinCardRect(i){
-  const w = 320, h = 66, gap = 10, startY = 170;
-  return { x: (W-w)/2, y: startY + i*(h+gap), w, h };
+function hexToRgb(hex){
+  const h = String(hex || "").replace("#", "");
+  const v = h.length === 3 ? h.split("").map(c=>c+c).join("") : h;
+  const n = parseInt(v, 16) || 0;
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
 }
-function drawSkinsScene(){
+function rgba(hex, a){
+  const c = hexToRgb(hex);
+  return "rgba(" + c.r + "," + c.g + "," + c.b + "," + a + ")";
+}
+function drawCoinIcon(cx, cy, r){
+  ctx.save();
+  const g = ctx.createLinearGradient(cx, cy-r, cx, cy+r);
+  g.addColorStop(0, "#FFE27A"); g.addColorStop(0.55, "#FFD02E"); g.addColorStop(1, "#D98A08");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = "rgba(42,21,0,0.45)"; ctx.lineWidth = Math.max(1, r*0.16);
+  ctx.beginPath(); ctx.arc(cx, cy, r*0.60, 0, 6.283); ctx.stroke();
+  ctx.restore();
+}
+function drawLockIcon(cx, cy, s, color){
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(1, s*0.14); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(cx, cy-s*0.12, s*0.34, Math.PI, 0); ctx.stroke();
+  roundRect(cx-s*0.46, cy-s*0.04, s*0.92, s*0.66, s*0.14); ctx.fill();
+  ctx.restore();
+}
+
+function drawCharacterTeaserCard(i){
+  const r = characterCardRect(i);
+  ctx.save();
+  ctx.fillStyle = "rgba(255,247,224,0.025)";
+  roundRect(r.x, r.y, r.w, r.h, 14); ctx.fill();
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = "rgba(255,247,224,0.13)";
+  ctx.lineWidth = 1.2;
+  roundRect(r.x, r.y, r.w, r.h, 14); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "600 22px Fredoka, system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,247,224,0.20)";
+  ctx.fillText("?", r.x+r.w/2, r.y+29);
+  ctx.font = "bold 9px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "rgba(255,247,224,0.32)";
+  ctx.fillText("SEGERA", r.x+r.w/2, r.y+53);
+  ctx.restore();
+}
+
+function drawCharacterCard(sk, i){
+  const r = characterCardRect(i);
+  const owned = unlockedSkins.includes(sk.id);
+  const selected = selectedSkin === sk.id;
+  const canAfford = totalCoins >= sk.cost;
+  const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y+r.h);
+  if (selected){ g.addColorStop(0,"rgba(255,240,160,0.28)"); g.addColorStop(1,"rgba(224,140,16,0.30)"); }
+  else if (owned){ g.addColorStop(0,"rgba(255,255,255,0.10)"); g.addColorStop(1,"rgba(255,255,255,0.045)"); }
+  else { g.addColorStop(0,"rgba(255,247,224,0.055)"); g.addColorStop(1,"rgba(7,9,24,0.20)"); }
+  ctx.fillStyle = g;
+  roundRect(r.x, r.y, r.w, r.h, 14); ctx.fill();
+  ctx.strokeStyle = selected ? "#FFD02E" : (owned ? "rgba(255,247,224,0.28)" : "rgba(255,247,224,0.12)");
+  ctx.lineWidth = selected ? 2 : 1.2;
+  roundRect(r.x, r.y, r.w, r.h, 14); ctx.stroke();
+
+  // Avatar mini. Kalau belum terbuka, diredupkan supaya fokus ke harga.
+  ctx.save();
+  if (!owned) ctx.globalAlpha = 0.52;
+  drawCharacterAvatar(r.x+r.w/2, r.y+25, selected ? 30 : 27, sk.id, { idle:true, detail:false });
+  ctx.restore();
+
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "bold 10.5px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = owned ? "#FFF7E0" : "rgba(255,247,224,0.62)";
+  ctx.fillText(sk.name, r.x+r.w/2, r.y+48);
+
+  ctx.font = "bold 8.5px Fredoka, system-ui, -apple-system, sans-serif";
+  if (selected){ ctx.fillStyle = "#FFD02E"; ctx.fillText("Dipakai", r.x+r.w/2, r.y+59); }
+  else if (owned){ ctx.fillStyle = "rgba(168,255,205,0.92)"; ctx.fillText("Pakai", r.x+r.w/2, r.y+59); }
+  else if (canAfford){ ctx.fillStyle = "#FFE27A"; ctx.fillText("Beli " + sk.cost, r.x+r.w/2, r.y+59); }
+  else { ctx.fillStyle = "rgba(255,160,160,0.82)"; ctx.fillText("Perlu " + sk.cost, r.x+r.w/2, r.y+59); }
+
+  if (selected){
+    ctx.fillStyle = "#FFD02E";
+    ctx.beginPath(); ctx.arc(r.x+r.w-11, r.y+9, 6.5, 0, 6.283); ctx.fill();
+    drawCheckIcon(r.x+r.w-11, r.y+9, 9, "#2A1500");
+  } else if (!owned){
+    drawLockIcon(r.x+r.w-12, r.y+9, 10, "rgba(255,247,224,0.38)");
+  }
+}
+
+function drawCharactersScene(){
   drawMenuScene(0, true);
   ctx.save();
-  ctx.fillStyle = 'rgba(7,9,22,0.92)';
+  ctx.fillStyle = "rgba(7,9,22,0.92)";
   ctx.fillRect(0,0,W,H);
-  ctx.textAlign='center';
-  ctx.font='bold 28px Fredoka, system-ui, -apple-system, sans-serif';
-  ctx.fillStyle='rgba(0,0,0,0.4)';
-  ctx.fillText('PILIH SKIN', W/2+2, 90);
-  ctx.fillStyle='#FFF7E0';
-  ctx.fillText('PILIH SKIN', W/2, 88);
-  ctx.font='bold 13px Fredoka, system-ui, -apple-system, sans-serif';
-  ctx.fillStyle='rgba(255,224,102,0.95)';
-  ctx.fillText('💰 Total koin: ' + totalCoins, W/2, 118);
-  ctx.font='11px Fredoka, system-ui, -apple-system, sans-serif';
-  ctx.fillStyle='rgba(255,255,255,0.55)';
-  ctx.fillText('Setiap Jelly = 1 koin', W/2, 138);
+  ctx.textAlign = "center";
 
-  SKINS.forEach((sk, i) => {
-    const r = skinCardRect(i);
-    const owned = unlockedSkins.includes(sk.id);
-    const selected = selectedSkin === sk.id;
-    const canAfford = totalCoins >= sk.cost;
-    const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y+r.h);
-    if (selected){ g.addColorStop(0,'rgba(255,240,160,0.35)'); g.addColorStop(1,'rgba(224,140,16,0.35)'); }
-    else { g.addColorStop(0,'rgba(255,255,255,0.10)'); g.addColorStop(1,'rgba(255,255,255,0.05)'); }
-    ctx.fillStyle=g;
-    roundRect(r.x,r.y,r.w,r.h,14); ctx.fill();
-    ctx.strokeStyle = selected ? '#FFD02E' : (owned ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)');
-    ctx.lineWidth = selected ? 2.5 : 1.4;
-    roundRect(r.x,r.y,r.w,r.h,14); ctx.stroke();
+  // Judul
+  ctx.font = "bold 28px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillText("KARAKTER", W/2+2, 58);
+  ctx.fillStyle = "#FFF7E0";
+  ctx.fillText("KARAKTER", W/2, 56);
+  ctx.font = "11px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "rgba(255,247,224,0.62)";
+  ctx.fillText("Pilih rupa Blobby-mu", W/2, 78);
 
-    const cx=r.x+40, cy=r.y+r.h/2;
-    const cg = ctx.createRadialGradient(cx-8,cy-8,4,cx,cy,24);
-    cg.addColorStop(0, sk.colors[0]); cg.addColorStop(0.55, sk.colors[1]); cg.addColorStop(1, sk.colors[2]);
-    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,22,0,6.283); ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1.4;
-    ctx.beginPath(); ctx.arc(cx,cy,22,0,6.283); ctx.stroke();
-    ctx.fillStyle='#FFF7E0';
-    ctx.beginPath(); ctx.arc(cx-7,cy-3,6,0,6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx+7,cy-3,6,0,6.283); ctx.fill();
-    ctx.fillStyle='#1d2138';
-    ctx.beginPath(); ctx.arc(cx-7,cy-2,3,0,6.283); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx+7,cy-2,3,0,6.283); ctx.fill();
+  // Koin
+  const coinLabel = String(totalCoins);
+  ctx.font = "bold 12px Fredoka, system-ui, -apple-system, sans-serif";
+  const coinW = ctx.measureText(coinLabel).width;
+  const pillW = 36 + coinW;
+  ctx.fillStyle = "rgba(255,208,46,0.10)";
+  roundRect(W/2-pillW/2, 92, pillW, 25, 12.5); ctx.fill();
+  ctx.strokeStyle = "rgba(255,208,46,0.30)"; ctx.lineWidth = 1;
+  roundRect(W/2-pillW/2, 92, pillW, 25, 12.5); ctx.stroke();
+  drawCoinIcon(W/2-pillW/2+15, 104.5, 6);
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#FFE27A";
+  ctx.fillText(coinLabel, W/2-pillW/2+25, 105);
 
-    ctx.textAlign='left'; ctx.textBaseline='middle';
-    ctx.font='bold 16px Fredoka, system-ui, -apple-system, sans-serif';
-    ctx.fillStyle='#FFF7E0';
-    ctx.fillText(sk.name, r.x+76, r.y+r.h/2-10);
-    ctx.font='bold 12px Fredoka, system-ui, -apple-system, sans-serif';
-    if (selected){ ctx.fillStyle='#FFD02E'; ctx.fillText('✓ Dipakai', r.x+76, r.y+r.h/2+12); }
-    else if (owned){ ctx.fillStyle='rgba(200,240,255,0.9)'; ctx.fillText('Tap untuk pakai', r.x+76, r.y+r.h/2+12); }
-    else if (canAfford){ ctx.fillStyle='#a8ffcd'; ctx.fillText('💰 '+sk.cost+' — tap untuk beli', r.x+76, r.y+r.h/2+12); }
-    else { ctx.fillStyle='rgba(255,160,160,0.9)'; ctx.fillText('🔒 '+sk.cost+' (kurang '+(sk.cost-totalCoins)+')', r.x+76, r.y+r.h/2+12); }
-  });
+  // Panggung preview karakter terpilih.
+  const sel = getSkin(selectedSkin);
+  const glow = ctx.createRadialGradient(W/2, 166, 8, W/2, 166, 68);
+  glow.addColorStop(0, rgba(sel.accent, 0.28));
+  glow.addColorStop(0.65, rgba(sel.accent, 0.08));
+  glow.addColorStop(1, rgba(sel.accent, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(W/2, 166, 68, 0, 6.283); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.34)";
+  ctx.beginPath(); ctx.ellipse(W/2, 204, 30, 6, 0, 0, 6.283); ctx.fill();
+  drawCharacter(W/2, 166, 66, false, 1, 0, selectedSkin, null, { idle:true });
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.font = "bold 17px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "#FFF7E0";
+  ctx.fillText(sel.name, W/2, 218);
+  ctx.font = "10px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "rgba(255,247,224,0.55)";
+  ctx.fillText(sel.tagline, W/2, 232);
+
+  // Grid 3 x 4. Slot ke-12 adalah teaser fase 2.
+  CHARACTERS.forEach((sk, i) => drawCharacterCard(sk, i));
+  drawCharacterTeaserCard(CHARACTERS.length);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.font = "9.5px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.fillStyle = "rgba(255,247,224,0.58)";
+  ctx.fillText("Kumpulkan jelly saat race untuk membuka karakter baru.", W/2, 568);
   ctx.restore();
-  drawBigBtn(SKIN_BACK_R, '← Kembali', false);
+  drawBigBtn(CHAR_BACK_R, "← Kembali", false);
+}
+
+function characterFXEntries(){
+  if (!player || !window.BlobbyCharacterFX) return [];
+  const list = [];
+  if (!raceState.localDead){
+    list.push({
+      id: 'me', x: player.x, y: player.y, vx: player.vx, vy: player.vy,
+      skin: selectedSkin, enabled: raceState.phase === 'playing',
+      powered: powerTimer > 0, size: player.w
+    });
+  }
+  if (net.mode !== 'solo'){
+    Object.keys(net.players).forEach(pid => {
+      if (pid === net.myId) return;
+      const p = net.players[pid];
+      if (!p || !p.alive) return;
+      const ip = getInterpolatedPosition(pid);
+      list.push({
+        id: pid, x: ip.x, y: ip.y, vx: p.vx || 0, vy: p.vy || 0,
+        skin: p.skin || 'classic', enabled: raceState.phase === 'playing',
+        powered: p.powerTimer > 0, size: 46
+      });
+    });
+  }
+  return list;
 }
 
 function render(dt){
@@ -3701,15 +3797,20 @@ function render(dt){
   else if (state === 'result') drawResultScene();
   else if (state === 'gameover') drawGameOverScene();
   else if (state === 'settings') drawSettingsScene();
-  else if (state === 'skins') drawSkinsScene();
+  else if (state === 'characters') drawCharactersScene();
   else if (state === 'race'){
+    // Trail fase 2: update berbasis jarak, digambar di belakang pemain.
+    if (window.BlobbyCharacterFX && settings.trail && !(paused && net.mode === 'solo')){
+      BlobbyCharacterFX.update(dt, characterFXEntries());
+    }
     drawBackground();
     drawPlatforms();
+    if (window.BlobbyCharacterFX && settings.trail) BlobbyCharacterFX.draw(ctx, camY);
     drawCoins();
     drawParticles();
     if (net.mode !== 'solo' && raceState.phase === 'playing') drawRemotePlayers();
     if (!raceState.localDead || net.mode === 'solo'){
-      drawCharacter(player.x, player.y-camY, player.w, powerTimer>0, player.sq, player.vx, selectedSkin);
+      drawCharacter(player.x, player.y-camY, player.w, powerTimer>0, player.sq, player.vx, selectedSkin, null, { gaze: landingGaze });
     }
     drawRaceHUD();
     if (raceState.phase === 'playing' && !raceState.localDead && !(paused && net.mode === 'solo')) drawGameButtons();
@@ -3911,7 +4012,7 @@ function startRace(isMulti){
     });
     net.players[net.myId] = net.players[net.myId] || {};
     const p = net.players[net.myId];
-    p.name = myName; p.nameColor = myNameColor;
+    p.name = myName; p.nameColor = myNameColor; p.skin = selectedSkin;
     p.x = player.x; p.y = player.y; p.vx = 0; p.vy = 0;
     p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
     p.isMe = true;
@@ -4105,7 +4206,7 @@ canvas.addEventListener('pointerdown', function(e){
     if (pointInRect(lx,ly,MENU_PROFILE)){ sfxToggle(); openProfile(); return; }
     if (pointInRect(lx,ly,MENU_SOLO)){ sfxToggle(); requestSolo(); return; }
     if (pointInRect(lx,ly,MENU_MP)){ sfxToggle(); setScene('mpMenu'); return; }
-    if (pointInRect(lx,ly,MENU_SKIN)){ sfxToggle(); returnState='menu'; setScene('skins'); return; }
+    if (pointInRect(lx,ly,MENU_CHARACTER)){ sfxToggle(); returnState='menu'; setScene('characters'); return; }
     if (pointInRect(lx,ly,MENU_SET)){ sfxToggle(); returnState='menu'; setScene('settings'); return; }
     return;
   }
@@ -4128,13 +4229,16 @@ canvas.addEventListener('pointerdown', function(e){
   if (state === 'waiting'){
     // REK 5: tap tombol salin (hanya saat room tersambung).
     if (net.connected && pointInRect(lx,ly,WAIT_COPY)){ copyRoomCode(); return; }
+    if (net.connected && pointInRect(lx,ly,WAIT_CHAR)){
+      sfxToggle(); returnState='waiting'; setScene('characters'); return;
+    }
     if (net.isHost && net.connected && pointInRect(lx,ly,WAIT_START)){
       sfxToggle(); hostStartRace();
       return;
     }
     if (pointInRect(lx,ly,WAIT_LEAVE)){ sfxToggle(); netCleanup(); setScene('mpMenu'); return; }
     // REK 4: mulai drag-scroll bila sentuh area daftar pemain.
-    if (waitScrollMax > 0 && ly > 250 && ly < 562){ waitDragY = ly; waitDragId = e.pointerId; }
+    if (waitScrollMax > 0 && ly > 280 && ly < 562){ waitDragY = ly; waitDragId = e.pointerId; }
     return;
   }
   if (state === 'result'){
@@ -4163,22 +4267,18 @@ canvas.addEventListener('pointerdown', function(e){
           if (settings.music){ if (!music.timer && state !== 'menu') startMusic(); }
           else stopMusic();
         }
+        if (item.id === 'trail' && window.BlobbyCharacterFX){
+          BlobbyCharacterFX.setEnabled(settings.trail);
+        }
       }
     });
     return;
   }
-  if (state === 'skins'){
-    if (pointInRect(lx,ly,SKIN_BACK_R)){ sfxToggle(); setScene(returnState); return; }
-    SKINS.forEach((sk, i) => {
-      if (pointInRect(lx,ly,skinCardRect(i))){
-        const owned = unlockedSkins.includes(sk.id);
-        if (owned){
-          if (selectedSkin !== sk.id){ selectedSkin = sk.id; saveSkins(); sfxToggle(); haptic(15); }
-        } else if (totalCoins >= sk.cost){
-          totalCoins -= sk.cost; unlockedSkins.push(sk.id); selectedSkin = sk.id;
-          saveSkins(); sfxUnlock(); haptic([20,30,20,30,40]);
-        } else { sfxToggle(); haptic([10,20,10]); }
-      }
+  if (state === 'characters'){
+    if (pointInRect(lx,ly,CHAR_BACK_R)){ sfxToggle(); setScene(returnState); return; }
+    // Slot CHARACTERS.length adalah teaser "SEGERA", tidak bisa dipilih.
+    CHARACTERS.forEach((sk, i) => {
+      if (pointInRect(lx,ly,characterCardRect(i))) chooseCharacter(sk.id);
     });
     return;
   }

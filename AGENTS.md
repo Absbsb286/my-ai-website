@@ -21,7 +21,9 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Repo: https://github.com/Absbsb286/my-ai-website
 
 ## File Utama
-- public/bloby.html — file game utama (4.311 baris, single-file HTML+JS)
+- public/bloby.html — file game utama (4.043 baris, HTML+JS)
+- public/game/characters.js — data 11 karakter, bentuk prosedural, aksesori, idle, blink
+- public/game/character-fx.js — trail fase 2 + burst per karakter
 - src/app/page.tsx — hanya redirect ke /bloby.html
 - src/app/layout.tsx — metadata (sudah benar; title/OG memakai em dash)
 - auto-push.js — script auto-commit & push (pantau src/ dan public/)
@@ -39,6 +41,16 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - Disimpan di `localStorage['blobby_name']` dan `localStorage['blobby_name_color']`.
 - `nameColor` ikut `hello`/`roster`/`state`/ranking; warna dari peer dinormalisasi.
 - Nama duplikat diizinkan; penanda `(kamu)` ada di daftar waiting dan hasil.
+
+## Sistem Karakter
+- 11 karakter: classic, ninja, mochi, astro, pudi, chef, taro, detektif, sprout, nori, nova.
+- Data/render di `public/game/characters.js`; FX trail di `public/game/character-fx.js`.
+- Picker dibuka dari tombol Karakter di menu atau chip "Karakter · <nama>" di waiting lobby.
+- Harga: ninja 500, mochi 800, astro 1000, pudi 1200, chef 1500, taro 1800, detektif 2000, sprout 2400, nori 2800, nova 3200.
+- localStorage: `blobby_coins`, `blobby_skins`, `blobby_skin`. Field jaringan tetap `skin`.
+- Trail bisa dimatikan di Settings; reduced-motion otomatis mematikan trail.
+- Mata karakter mengikuti platform pendaratan terdekat (lokal + remote).
+- Powered mode tetap memakai armor Iron Man.
 
 ## Konvensi Kode
 - Tailwind CSS untuk styling
@@ -71,6 +83,10 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 
 ## Testing
 - Status 21 Okt 2026: alur room/race/hasil/replay/host migration lolos di 2 tab lokal + production
+- Karakter 21 Okt 2026: picker desktop + 360px mobile, 11 karakter + teaser,
+  beli/pilih Mochi, avatar menu/profil/waiting/hasil, sinkron skin 2 tab,
+  mulai race saat guest di picker, trail Mochi/Nova di race — lolos.
+- Build 21 Okt 2026: `npm run build` lolos; ESLint hanya warning font lama di layout.
 - Profil 21 Okt 2026: desktop + viewport mobile, batas 10 karakter, sanitasi emoji,
   simpan/batal/persistensi, nama duplikat + `(kamu)`, sinkron warna di waiting,
   HUD, label remote, layar hasil (2 origin lokal), dan production
