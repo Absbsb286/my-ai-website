@@ -16,6 +16,7 @@
 
 ## Update 24 Okt 2026
 - [x] Bug spectator stale sudah diperbaiki: raceSeed di packet state, `alive` tidak diikat phase countdown, keyboard spectator gate local dead, dan spektator palsu ditolak. Build lulus.
+- [x] Bug progress/koin hilang setelah refresh: komentar menyelubungi blok `try { totalCoins = parseInt(...) }`; blok parse dipisahkan, verifikasi Playwright `totalCoins=1200` setelah reload.
 - [ ] Next: perbaikan spektator lebih lanjut (polish camera, UI spectator, dan host authority), dilanjutkan sesi berikutnya.
 
 ## Update 23 Okt 2026
