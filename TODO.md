@@ -14,6 +14,10 @@
 
 - [x] Mata mode armor 17 koin sudah memakai `gaze` dan sudah dicek pengguna.
 
+## Update 24 Okt 2026
+- [x] Bug spectator stale sudah diperbaiki: raceSeed di packet state, `alive` tidak diikat phase countdown, keyboard spectator gate local dead, dan spektator palsu ditolak. Build lulus.
+- [ ] Next: perbaikan spektator lebih lanjut (polish camera, UI spectator, dan host authority), dilanjutkan sesi berikutnya.
+
 ## Update 23 Okt 2026
 - [x] Platform bergerak - gerak di-resolve dari waktu dinding (spawnTime + elapsed) dengan pantulan deterministik, bukan += vx*dt. File: public/bloby.html (spawnPlatform, updateGame).
 - [x] BONUS_LAST_STANDING - hanya diberikan ke sole survivor (aliveCount === 1). File: public/bloby.html (buildRanking).
