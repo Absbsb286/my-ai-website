@@ -144,7 +144,8 @@ const SKINS = CHARACTERS; // alias untuk kode lama
 if (!CHARACTERS.length) console.error('[Blobby] characters.js gagal dimuat.');
 
 let totalCoins = 0, unlockedSkins = ['classic'], selectedSkin = 'classic';
-let skinUnlockAnim = { id: null, until: 0 }; // animasi singkat setelah membeli karaktertry{ totalCoins = parseInt(localStorage.getItem('blobby_coins')||'0',10)||0; }catch(e){}
+let skinUnlockAnim = { id: null, until: 0 }; // animasi singkat setelah membeli karakter
+try { totalCoins = parseInt(localStorage.getItem('blobby_coins') || '0', 10) || 0; } catch(e){}
 try{ const s = localStorage.getItem('blobby_skins'); if(s) unlockedSkins = JSON.parse(s); }catch(e){}
 // Buang id yang sudah tidak ada, lalu pastikan karakter dasar selalu terbuka.
 unlockedSkins = Array.isArray(unlockedSkins) ? unlockedSkins.filter(id => CHARACTERS.some(c=>c.id===id)) : [];
