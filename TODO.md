@@ -13,3 +13,9 @@
     4. Verifikasi `gaze.y < 0` saat melompat dan pupil terlihat mengarah ke atas/ahead.
 
 - [x] Mata mode armor 17 koin sudah memakai `gaze` dan sudah dicek pengguna.
+
+## Update 23 Okt 2026
+- [x] Platform bergerak - gerak di-resolve dari waktu dinding (spawnTime + elapsed) dengan pantulan deterministik, bukan += vx*dt. File: public/bloby.html (spawnPlatform, updateGame).
+- [x] BONUS_LAST_STANDING - hanya diberikan ke sole survivor (aliveCount === 1). File: public/bloby.html (buildRanking).
+- [x] TURN gratis tambahan - OpenRelay ditambahkan sebagai fallback pada /api/config. File: src/app/api/config/route.ts.
+- [x] Migrasi /game tahap awal - route Next.js /game dibuat + redirect /game. Engine masih iframe public/bloby.html. File: src/app/game/page.tsx, src/app/page.tsx.

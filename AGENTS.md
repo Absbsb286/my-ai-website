@@ -24,7 +24,7 @@ project ini. Baca file ini SEBELUM melakukan task apapun.
 - public/bloby.html — file game utama (4.043 baris, HTML+JS)
 - public/game/characters.js — data 11 karakter, bentuk prosedural, aksesori, idle, blink
 - public/game/character-fx.js — trail fase 2 + burst per karakter
-- src/app/page.tsx — hanya redirect ke /bloby.html
+- src/app/page.tsx — redirect ke /game
 - src/app/layout.tsx — metadata (sudah benar; title/OG memakai em dash)
 - auto-push.js — script auto-commit & push (pantau src/ dan public/)
 - .clinerules/project-rules.md — aturan detail untuk Cline

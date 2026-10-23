@@ -23,6 +23,18 @@ export async function GET() {
     { urls: 'stun:stun1.l.google.com:19302' }
   ];
 
+  // TURN gratis tambahan (OpenRelay) sebagai fallback agar multiplayer lintas
+  // jaringan ketat tidak bergantung penuh pada evan-brass yang bisa rate-limit.
+  // Kredensial ini publik (openrelayproject) — bukan rahasia, tidak perlu env.
+  iceServers.push({
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  });
+
   if (turnUsername && turnCredential) {
     iceServers.push({
       urls: [

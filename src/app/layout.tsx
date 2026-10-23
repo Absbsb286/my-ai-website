@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Blobby Jelly — Multiplayer Jelly Jump Game",
   description: "Race to the top in this multiplayer jelly platformer. Jump, collect jellies, activate power-ups, and compete with friends in real-time P2P races.",
   keywords: ["multiplayer game", "WebRTC", "platformer", "jelly", "P2P", "real-time"],
