@@ -923,7 +923,7 @@ function broadcastState(){
       id: net.myId,
       x: player.x, y: player.y, vx: player.vx, vy: player.vy,
       score: score, coinCount: coinCount, powerTimer: powerTimer,
-      alive: !raceState.localDead && raceState.phase === 'playing',
+      alive: !raceState.localDead,
       raceSeed: net.raceSeed,
       spectateTarget: raceState.spectating ? raceState.spectateTarget : null
     };
