@@ -61,7 +61,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXXX">
+<input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXXX" aria-label="Kode room 6 karakter" inputMode="text">
 <input id="nameInput" maxlength="10" autocomplete="nickname" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Nama kamu" aria-label="Nama tampilan">
 <!-- Data + render karakter dipisah supaya fase 2 (kostum, idle, trail) tidak membengkakkan file utama. -->
 <script src="/game/characters.js"></script>
@@ -80,7 +80,9 @@ const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const s = Math.min(window.innerWidth/W, window.innerHeight/H);
-  canvas.style.width  = (W*s)+'px';
+  canvas.tabIndex = 0;
+canvas.style.outline = 'none';
+canvas.style.width  = (W*s)+'px';
   canvas.style.height = (H*s)+'px';
   canvas.width  = Math.round(W*s*dpr);
   canvas.height = Math.round(H*s*dpr);
@@ -142,7 +144,7 @@ const SKINS = CHARACTERS; // alias untuk kode lama
 if (!CHARACTERS.length) console.error('[Blobby] characters.js gagal dimuat.');
 
 let totalCoins = 0, unlockedSkins = ['classic'], selectedSkin = 'classic';
-try{ totalCoins = parseInt(localStorage.getItem('blobby_coins')||'0',10)||0; }catch(e){}
+let skinUnlockAnim = { id: null, until: 0 }; // animasi singkat setelah membeli karaktertry{ totalCoins = parseInt(localStorage.getItem('blobby_coins')||'0',10)||0; }catch(e){}
 try{ const s = localStorage.getItem('blobby_skins'); if(s) unlockedSkins = JSON.parse(s); }catch(e){}
 // Buang id yang sudah tidak ada, lalu pastikan karakter dasar selalu terbuka.
 unlockedSkins = Array.isArray(unlockedSkins) ? unlockedSkins.filter(id => CHARACTERS.some(c=>c.id===id)) : [];
@@ -378,6 +380,7 @@ async function netCleanup(){
   net._lastSentNameColor = null;
   net._lastSentSkin = null;
   net.raceSeed = 1;
+  if (chatInputEl){ chatInputEl.style.display = 'none'; chatInputEl.value=''; try { chatInputEl.blur(); } catch(e){} }
   if (net._startInterval){ try { clearInterval(net._startInterval); } catch(e){} net._startInterval = null; }
   // Keluar dari room = sesi race selesai. Tanpa ini, indikator
   // "Race selesai" ikut terbawa ke room baru.
@@ -387,8 +390,12 @@ async function netCleanup(){
   raceState.finalRanking = null;
   raceState.resultShown = false;
   raceState.localDead = false;
+  raceState.spectating = false;
+  raceState.spectateTarget = null;
+  raceState.spectateSwitchAt = 0;
   raceState.myBonus = 0;
   raceState.lastEarnedCoins = 0;
+  chatMessages = [];
   // Reset module Trystero biar tidak ada state kotor dari room lama
   // (comment dulu, bisa diaktifkan kalau perlu)
   // net.module = null;
@@ -742,6 +749,8 @@ const [sendChat, getChat]         = room.makeAction('chat');
 
   getState((data) => {
     if (data.id === net.myId) return;
+    // Abaikan paket ketinggalan dari race sebelumnya yang still in flight.
+    if (typeof data.raceSeed === 'number' && data.raceSeed !== net.raceSeed) return;
     // JANGAN auto-start dari paket state. Dulu guest dipaksa masuk race di sini,
     // padahal belum menerima seed: map, kamera, dan timer jadi basi. Guest bisa
     // langsung jatuh dan membuat race host berakhir prematur.
@@ -770,7 +779,9 @@ const [sendChat, getChat]         = room.makeAction('chat');
       p.coinCount = data.coinCount;
       p.powerTimer = data.powerTimer;
       p.alive = data.alive;
-      p.spectateTarget = (typeof data.spectateTarget !== 'undefined') ? data.spectateTarget : (p.spectateTarget || null);
+      // Pemain yang masih hidup tidak boleh membawa sisa target penonton.
+      if (data.alive === true) p.spectateTarget = null;
+      else p.spectateTarget = (typeof data.spectateTarget !== 'undefined') ? data.spectateTarget : (p.spectateTarget || null);
       if (data.name && String(data.name).trim() !== '') {
         p.name = data.name;
       }
@@ -779,6 +790,28 @@ const [sendChat, getChat]         = room.makeAction('chat');
       }
       if (data.skin && data.skin !== '') {
         p.skin = data.skin;
+      }
+      // Anti-cheat MINIMAL (roadmap #3): host memvalidasi delta skor dari tamu.
+      // Delta ekstrem dalam satu paket state hampir mustahil secara fisik
+      // (lompat + koin) dan biasanya indikasi manipulasi. Jangan sampai
+      // ini menolak peningkatan legal karena dt tertunda: batas dibuat longgar.
+      if (net.isHost && !p.isMe){
+        if (typeof p._auditScore !== 'number') p._auditScore = p.score;
+        const reportedScore = Number.isFinite(data.score) ? Math.floor(data.score) : 0;
+        const scoreDelta = reportedScore - p._auditScore;
+        const maxDeltaPerPacket = 60; // generous: lompat + beberapa koin per ~33ms
+        if (scoreDelta > maxDeltaPerPacket){
+          // Terapkan skor lama, biar tamu tidak langsung unggul palsu.
+          p.score = p._auditScore;
+          p.scoreDeltaRejected = (p.scoreDeltaRejected || 0) + 1;
+        } else {
+          p._auditScore = p.score;
+        }
+        // Clamp coinCount/powerTimer ke rentang wajar.
+        p.coinCount = clamp(p.coinCount || 0, 0, COINS_NEEDED);
+        if (!Number.isFinite(p.powerTimer) || p.powerTimer < 0) p.powerTimer = 0;
+        if (p.powerTimer > POWER_DURATION + 1) p.powerTimer = POWER_DURATION;
+        if (typeof data.alive !== 'boolean') p.alive = !!p.alive;
       }
       if (!Array.isArray(p.history)) p.history = [];
       p.history.push({t: performance.now(), x: data.x, y: data.y});
@@ -814,6 +847,10 @@ const [sendChat, getChat]         = room.makeAction('chat');
     setSeed(data.seed);
     net.raceSeed = data.seed;
     raceState.startAt = performance.now() + (data.delay || 0);
+    raceState.localDead = false;
+    raceState.spectating = false;
+    raceState.spectateTarget = null;
+    if (net.players) Object.keys(net.players).forEach(pid => { if (net.players[pid]) net.players[pid].spectateTarget = null; });
     startRace(true);
     // Guest yang telat masuk diberi sisa waktu yang sama dengan host.
     const remaining = (typeof data.remaining === 'number')
@@ -848,6 +885,8 @@ const [sendChat, getChat]         = room.makeAction('chat');
   });
   getChat((data) => {
     if (!data || !data.text) return;
+    // Abaikan echo dari diri sendiri (kalau broker Trystero mengirim balik).
+    if (data.id && data.id === net.myId) return;
     chatMessages.push({
       id: data.id || 'peer',
       name: clipName(data.name || 'Pemain', 12),
@@ -885,7 +924,8 @@ function broadcastState(){
       x: player.x, y: player.y, vx: player.vx, vy: player.vy,
       score: score, coinCount: coinCount, powerTimer: powerTimer,
       alive: !raceState.localDead && raceState.phase === 'playing',
-      spectateTarget: raceState.specting ? raceState.spectateTarget : (raceState.spectating ? raceState.spectateTarget : null)
+      raceSeed: net.raceSeed,
+      spectateTarget: raceState.spectating ? raceState.spectateTarget : null
     };
     if (myName !== net._lastSentName){ pkt.name = myName; net._lastSentName = myName; }
     if (myNameColor !== net._lastSentNameColor){ pkt.nameColor = myNameColor; net._lastSentNameColor = myNameColor; }
@@ -969,8 +1009,7 @@ let menuT = 0, overT = 0;
 let best = 0;
 try{ best = parseInt(localStorage.getItem('blobby_best')||'0',10)||0; }catch(e){}
 
-const keys = { left:false, right:false };
-let touchDir = 0;
+const keys = { left:false, right:false };let touchDir = 0;
 const drag = { active:false, x:0, id:null };
 let btnPointerId = null;
 let tapTimer = 0, tapSide = 0;
@@ -994,7 +1033,8 @@ const raceState = {
   aliveCheckTimer: 0,
   spectating: false,
   spectateTarget: null,
-  spectateSwitchAt: 0
+  spectateSwitchAt: 0,
+  fallGrace: 0
 };
 
 function spawnPlatform(y){
@@ -1296,7 +1336,10 @@ function updateGame(dt){
   score = Math.max(0, Math.floor((START_Y - maxReach)/10)) + coinsTotal*5;
 
   if (player.y - camY > H + 70){
-    onPlayerDied();
+    raceState.fallGrace = (raceState.fallGrace || 0) + dt;
+    if (raceState.fallGrace >= 0.3) onPlayerDied();
+  } else {
+    raceState.fallGrace = 0;
   }
 }
 
@@ -1317,12 +1360,14 @@ function onPlayerDied(){
   } else {
     raceState.localDead = true;
     sfxOver();
+    // Semua pemain (host maupun guest) harus menandai dirinya mati,
+    // supaya status `alive` sinkron di daftar, bonus, dan spectator count.
+    const myP = net.players[net.myId];
+    if (myP) myP.alive = false;
     if (net.isHost){
-      const myP = net.players[net.myId];
-      if (myP) myP.alive = false;
       checkHostEndCondition();
-    startSpectating();
     }
+    startSpectating();
   }
 }
 
@@ -1351,7 +1396,12 @@ function cycleSpectate(dir){
 function spectatorCountFor(pid){
   let n = 0;
   Object.keys(net.players).forEach(id => {
-    if (net.players[id] && net.players[id].spectateTarget === pid) n++;
+    if (id === pid) return; // diri sendiri tidak dihitung sebagai penonton
+    const p = net.players[id];
+    // Hanya pemain yang sudah mati (tidak hidup) yang sah sebagai spectator.
+    // Ini mencegah ikon mata palsu saat игрок/guest yang masih hidup
+    // mengirim kembali target lama pada paket countdown/lamanya.
+    if (p && p.alive === false && p.spectateTarget === pid && state === 'race' && raceState.phase === 'playing') n++;
   });
   return n;
 }
@@ -1464,6 +1514,13 @@ function buildRanking(){
 
 function showResult(ranking){
   if (!Array.isArray(ranking) || raceState.resultShown) return;
+  // Bersihkan status spektator lama agar ikon mata tidak tersisa di race berikutnya.
+  raceState.spectating = false;
+  raceState.spectateTarget = null;
+  raceState.spectateSwitchAt = 0;
+  Object.keys(net.players).forEach(pid => {
+    if (net.players[pid]) net.players[pid].spectateTarget = null;
+  });
   updateDailyChallenge(score);
   raceState.resultShown = true;
   raceState.finalRanking = ranking;
@@ -2649,12 +2706,12 @@ function drawPowerText(){
 const MENU_SOLO = { x: W/2-120, y: 460, w: 240, h: 50 };
 const MENU_MP   = { x: W/2-120, y: 520, w: 240, h: 50 };
 // REK 3 (Hallmark grid): KARAKTER & SET sebaris, 115+10+115 = 240 sejajar tombol lain.
-const MENU_CHARACTER = { x: W/2-120, y: 580, w: 115, h: 40 };
-const MENU_SET  = { x: W/2+5, y: 580, w: 115, h: 40 };
+const MENU_CHARACTER = { x: W/2-120, y: 578, w: 115, h: 44 };
+const MENU_SET  = { x: W/2+5, y: 578, w: 115, h: 44 };
 const MENU_HELP = { x: W-58, y: 14, w: 44, h: 44 };
 const MENU_DAILY = { x: 14, y: 14, w: 118, h: 44 };
 const DAILY_PLAY = { x: W/2-152, y: 540, w: 304, h: 48 };
-const DAILY_CLOSE = { x: W/2-70, y: 602, w: 140, h: 40 };
+const DAILY_CLOSE = { x: W/2-70, y: 600, w: 140, h: 44 };
 // Target sentuh 44px: visual chip tetap ringkas, area tap lebih lega.
 const MENU_PROFILE = { x: W/2-100, y: 399, w: 200, h: 44 };
 
@@ -2673,7 +2730,7 @@ const JOIN_BACK = { x: W/2-120, y: 522, w: 240, h: 44 };
 // REK 5: tombol salin kode room di samping kotak kode.
 const WAIT_START = { x: W/2-120, y: 626, w: 240, h: 56 };
 const WAIT_LEAVE = { x: W/2-120, y: 570, w: 240, h: 44 };
-const WAIT_COPY  = { x: W/2+106, y: 158, w: 40, h: 40 };
+const WAIT_COPY  = { x: W/2+104, y: 156, w: 44, h: 44 };
 const WAIT_CHAR  = { x: W/2-100, y: 232, w: 200, h: 30 };
 
 const SET_BACK = { x: W/2-90, y: 480, w: 180, h: 44 };
@@ -2897,7 +2954,12 @@ function chooseCharacter(id){
     syncSkinToNet();
     sfxUnlock();
     haptic([20,30,20,30,40]);
+    if (typeof showToast === 'function') showToast('Berhasil beli & pakai ' + sk.name + ' ✓');
+    // Animasi unlock singkat (radial highlight + putaran preview).
+    skinUnlockAnim = { id: sk.id, until: performance.now() + 220 };
     return true;
+  } else if (typeof showToast === 'function') {
+    showToast('Koin belum cukup untuk ' + sk.name);
   }
 
   sfxToggle();
@@ -3932,18 +3994,45 @@ function drawCharacterCard(sk, i){
   ctx.lineWidth = selected ? 2 : 1.2;
   roundRect(r.x, r.y, r.w, r.h, 14); ctx.stroke();
 
+  // Aura karakter terpilih agar perbedaan terbaca jelas.
+  const now = performance.now();
+  const pulse = (skinUnlockAnim.id === sk.id && now < skinUnlockAnim.until)
+    ? 1 + 0.16 * Math.sin(((skinUnlockAnim.until - now) / 220) * Math.PI)
+    : 1;
+  const cx = r.x + r.w / 2;
+  const cy = r.y + 25;
+  if (selected || (skinUnlockAnim.id === sk.id && now < skinUnlockAnim.until)){
+    ctx.save();
+    const glowR = Math.max(28, r.w * 0.82);
+    const gl = ctx.createRadialGradient(cx, cy, 4, cx, cy, glowR);
+    gl.addColorStop(0, rgba(sk.accent || '#FFD02E', selected ? 0.42 : 0.38));
+    gl.addColorStop(0.6, rgba(sk.accent || '#FFD02E', 0.16));
+    gl.addColorStop(1, rgba(sk.accent || '#FFD02E', 0));
+    ctx.fillStyle = gl;
+    ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, 6.283); ctx.fill();
+    ctx.restore();
+  }
+
   // Avatar mini. Kalau belum terbuka, diredupkan supaya fokus ke harga.
+  const avSize = (selected ? 30 : 27) * pulse;
   ctx.save();
   if (!owned) ctx.globalAlpha = 0.52;
-  drawCharacterAvatar(r.x+r.w/2, r.y+25, selected ? 30 : 27, sk.id, { idle:true, detail:false });
+  if (skinUnlockAnim.id === sk.id && now < skinUnlockAnim.until){
+    // Preview berputar sebentar saat baru dibeli.
+    const spin = ((skinUnlockAnim.until - now) / 220) * Math.PI * 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(spin);
+    ctx.translate(-cx, -cy);
+  }
+  drawCharacterAvatar(cx, cy, avSize, sk.id, { idle:true, detail:false });
   ctx.restore();
 
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = "bold 10.5px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.font = "bold 11.5px Fredoka, system-ui, -apple-system, sans-serif";
   ctx.fillStyle = owned ? "#FFF7E0" : "rgba(255,247,224,0.62)";
   ctx.fillText(sk.name, r.x+r.w/2, r.y+48);
 
-  ctx.font = "bold 8.5px Fredoka, system-ui, -apple-system, sans-serif";
+  ctx.font = "bold 9.5px Fredoka, system-ui, -apple-system, sans-serif";
   if (selected){ ctx.fillStyle = "#FFD02E"; ctx.fillText("Dipakai", r.x+r.w/2, r.y+59); }
   else if (owned){ ctx.fillStyle = "rgba(168,255,205,0.92)"; ctx.fillText("Pakai", r.x+r.w/2, r.y+59); }
   else if (canAfford){ ctx.fillStyle = "#FFE27A"; ctx.fillText("Beli " + sk.cost, r.x+r.w/2, r.y+59); }
@@ -4096,7 +4185,7 @@ function render(dt){
       ctx.fillRect(0,0,W,H);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      if (raceState.spectating && raceState.spectateTarget && net.players[raceState.spectateTarget]){
+      if (raceState.localDead && raceState.spectating && raceState.spectateTarget && net.players[raceState.spectateTarget]){
         ctx.font = 'bold 20px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = '#67e8f9';
         ctx.fillText('👁  SPECTATING: ' + clipName(net.players[raceState.spectateTarget].name || 'Pemain', 14), W/2, 30);
@@ -4186,7 +4275,7 @@ if (raceState.spectating){
   const _sp = raceState.spectateTarget ? net.players[raceState.spectateTarget] : null;
   if (_sp){
     const _tc = _sp.y - H*0.45;
-    if (_tc < camY) camY += (_tc-camY)*Math.min(1, dt*11);
+    camY += (_tc - camY) * Math.min(1, dt * 11);
   }
 }
 
@@ -4194,6 +4283,7 @@ if (raceState.spectating){
       raceState.aliveCheckTimer -= dt;
       if (raceState.aliveCheckTimer <= 0){
         raceState.aliveCheckTimer = 0.5;
+        raceState.fallGrace = 0;
         checkHostEndCondition();
       }
     }
@@ -4211,6 +4301,7 @@ if (raceState.spectating){
     }
   }
 
+  // debug ekspor ringan untuk inspeksi
   render(dt);
   requestAnimationFrame(loop);
 }
@@ -4240,9 +4331,9 @@ window.addEventListener('keydown', function(e){
     return;
   }
  // jangan proses kontrol game saat sedang mengetik chat
- if (document.activeElement === chatInputEl){ if (k === "Escape"){ chatInputEl.style.display="none"; chatInputEl.blur(); } return; }
+ if (document.activeElement === chatInputEl && chatInputEl.style.display !== 'none'){ if (k === "Escape"){ chatInputEl.style.display="none"; chatInputEl.blur(); } return; }
 
- if (state === "race" && raceState.spectating){
+ if (state === "race" && raceState.spectating && raceState.localDead){
    if (k==="ArrowLeft"||k==="a"||k==="A"||c==="KeyA"||c==="ArrowLeft"){ cycleSpectate(-1); e.preventDefault(); return; }
    if (k==="ArrowRight"||k==="d"||k==="D"||c==="KeyD"||c==="ArrowRight"){ cycleSpectate(1); e.preventDefault(); return; }
    if (k==="t"||k==="T"||k==="Enter"){ openChatInput(); e.preventDefault(); return; }
@@ -4268,6 +4359,7 @@ window.addEventListener('keyup', function(e){
   if (k==='ArrowLeft'||c==='ArrowLeft'||k==='a'||k==='A'||c==='KeyA') keys.left = false;
   if (k==='ArrowRight'||c==='ArrowRight'||k==='d'||k==='D'||c==='KeyD') keys.right = false;
 });
+window.addEventListener('blur', () => { keys.left = false; keys.right = false; touchDir = 0; });
 
 function logicalX(cx){ const r = canvas.getBoundingClientRect(); return ((cx-r.left)/r.width)*W; }
 function logicalY(cy){ const r = canvas.getBoundingClientRect(); return ((cy-r.top)/r.height)*H; }
@@ -4298,10 +4390,16 @@ function startRace(isMulti){
   raceState.finalRanking = null;
   raceState.resultShown = false;
   raceState.localDead = false;
+  raceState.spectating = false;
+  raceState.spectateTarget = null;
+  raceState.spectateSwitchAt = 0;
   raceState.myBonus = 0;
   raceState.lastEarnedCoins = 0;
   raceState.aliveCheckTimer = 0.5;
+  if (chatInputEl){ chatInputEl.style.display = 'none'; chatInputEl.value=''; try { chatInputEl.blur(); } catch(e){} }
+        raceState.fallGrace = 0;
   lastTapTime = 0; // jangan bawa tap terakhir dari menu/tutorial ke dalam race
+  try { canvas.focus(); } catch(e){}
 
   if (!isMulti){
     resetGame(Math.floor(Math.random()*2147483646)+1);
@@ -4312,7 +4410,8 @@ function startRace(isMulti){
     Object.keys(net.players).forEach(pid => {
       const p = net.players[pid];
       if (!p) return;
-      p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
+      p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true; p.spectateTarget = null;
+      p._auditScore = 0;
       if (pid !== net.myId){
         p.x = W/2; p.y = START_Y; p.vx = 0; p.vy = 0;
         p.history = [];
@@ -4322,11 +4421,14 @@ function startRace(isMulti){
     const p = net.players[net.myId];
     p.name = myName; p.nameColor = myNameColor; p.skin = selectedSkin;
     p.x = player.x; p.y = player.y; p.vx = 0; p.vy = 0;
-    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
+    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true; p.spectateTarget = null;
     p.isMe = true;
   }
   const ac = AC(); if(ac && ac.state==='suspended') ac.resume();
   startMusic();
+  // Kirim satu paket state awal supaya target spector lama (jika ada) langsung
+  // ditimpa null di semua client tanpa menunggu fase "playing".
+  if (isMulti){ try { broadcastState(); } catch(e){} }
 }
 
 /* ---------- Reset state race tapi JAGA koneksi room ---------- */
@@ -4339,14 +4441,20 @@ function resetRaceState(){
   raceState.finalRanking = null;
   raceState.resultShown = false;
   raceState.localDead = false;
+  raceState.spectating = false;
+  raceState.spectateTarget = null;
+  raceState.spectateSwitchAt = 0;
   raceState.myBonus = 0;
   raceState.lastEarnedCoins = 0;
   raceState.aliveCheckTimer = 0.5;
+  if (chatInputEl){ chatInputEl.style.display = 'none'; chatInputEl.value=''; try { chatInputEl.blur(); } catch(e){} }
+        raceState.fallGrace = 0;
 
   // Reset semua pemain: skor, coin, power, alive
   Object.keys(net.players).forEach(pid => {
     const p = net.players[pid];
-    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true;
+    p.score = 0; p.coinCount = 0; p.powerTimer = 0; p.alive = true; p.spectateTarget = null;
+    p._auditScore = 0;
     p.ready = true; // siap untuk race berikutnya
   });
 
@@ -4424,6 +4532,11 @@ function hostStartRace(){
 
 function setScene(s){
   state = s;
+  // Bersihkan penanda spektator di luar race supaya tidak tersisa setelah game pertama.
+  if (s !== 'race'){
+    if (raceState) { raceState.spectating = false; raceState.spectateTarget = null; raceState.spectateSwitchAt = 0; }
+    if (net && net.players) Object.keys(net.players).forEach(pid => { if (net.players[pid]) net.players[pid].spectateTarget = null; });
+  }
   if (s === 'waiting'){ waitScroll = 0; waitDragY = null; waitDragId = null; }
   if (s === 'waiting') startLobbyHeartbeat(); else stopLobbyHeartbeat();
 

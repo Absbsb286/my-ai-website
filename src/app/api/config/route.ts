@@ -55,8 +55,8 @@ export async function GET() {
 
   return NextResponse.json(config, {
     headers: {
-      // Lebih pendek dari sebelumnya supaya perubahan kredensial cepat terpakai.
-      'Cache-Control': 'public, max-age=300, stale-while-revalidate=600'
+      // Payload berisi URL+kredensial broker/TURN, jadi jangan cache publik.
+      'Cache-Control': 'private, max-age=60, stale-while-revalidate=120'
     }
   });
 }
