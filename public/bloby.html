@@ -1221,7 +1221,21 @@ function updateGame(dt){
 
   if (state !== 'race') return;
   if (raceState.phase !== 'playing') return;
-  if (raceState.localDead) return;
+  if (raceState.localDead){
+    // Spectator tidak menggerakkan karakter sendiri, tetapi dunia (platform/coin)
+    // tetap di-stream mengikuti kamera yang mengikuti target. Tanpa ini,
+    // kamera spectator bisa menunjuk area kosong saat target lebih jauh.
+    if (raceState.spectating){
+      while (topY > camY - 400){
+        const diff = clamp(-topY/7000, 0, 1);
+        topY -= rngRange(80, 128 + diff*22);
+        spawnPlatform(topY);
+      }
+      platforms = platforms.filter(p => p.y < camY+H+180);
+      coins     = coins.filter(c => !c.taken && c.y < camY+H+180);
+    }
+    return;
+  }
 
   if (powerTimer > 0) powerTimer = Math.max(0, powerTimer - dt);
   const powered = powerTimer > 0;
@@ -2444,6 +2458,19 @@ function drawRemotePlayers(){
     if (!p || !p.alive) return;
     const ip = getInterpolatedPosition(pid); // posisi halus hasil interpolasi
     drawCharacter(ip.x, ip.y - camY, 46, p.powerTimer > 0, 1, p.vx||0, p.skin||'classic', null, { gaze: landingGazeFor(ip.x, ip.y + 23, p.vy||0, p.vx||0) });
+    // Sorot target yang sedang disaksikan agar terlihat jelas di tengah keramaian.
+    if (raceState.spectating && raceState.spectateTarget === pid){
+      ctx.save();
+      ctx.strokeStyle = 'rgba(103,232,249,0.85)';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = 'rgba(103,232,249,0.6)';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(ip.x, ip.y - camY, 34, 0, 6.283);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
     ctx.save();
     ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
@@ -4275,8 +4302,8 @@ if (raceState.spectating){
   }
   const _sp = raceState.spectateTarget ? net.players[raceState.spectateTarget] : null;
   if (_sp){
-    const _tc = _sp.y - H*0.45;
-    camY += (_tc - camY) * Math.min(1, dt * 11);
+    const _tc = _sp.y - H*0.42;
+    camY += (_tc - camY) * Math.min(1, dt * 13);
   }
 }
 
