@@ -1407,6 +1407,9 @@ function cycleSpectate(dir){
   idx = (idx + dir + targets.length) % targets.length;
   raceState.spectateTarget = targets[idx];
   raceState.spectating = true;
+  // Catat arah & waktu perpindahan untuk feedback visual tombol spectator (mobile/desktop).
+  raceState.specateLastDir = dir;
+  raceState.specateSwitchAt = performance.now();
 }
 function spectatorCountFor(pid){
   let n = 0;
@@ -2682,6 +2685,12 @@ function drawRaceHUD(){
 function drawGameButtons(){
   drawButton(BTN_LX, BTN_Y, 'left',  touchDir === -1);
   drawButton(BTN_RX, BTN_Y, 'right', touchDir ===  1);
+}
+function drawSpectateButtons(){
+  const pressedAge = performance.now() - (raceState.specateSwitchAt || 0);
+  const lastDir = raceState.specateLastDir || 0;
+  drawButton(BTN_LX, BTN_Y, 'left',  pressedAge < 180 && lastDir < 0);
+  drawButton(BTN_RX, BTN_Y, 'right', pressedAge < 180 && lastDir > 0);
 }
 function drawButton(cx,cy,side,pressed){
   ctx.save();
@@ -4203,6 +4212,7 @@ function render(dt){
     }
     drawRaceHUD();
     if (raceState.phase === 'playing' && !raceState.localDead && !(paused && net.mode === 'solo')) drawGameButtons();
+if (raceState.phase === 'playing' && raceState.localDead && raceState.spectating && net.mode !== 'solo') drawSpectateButtons();
     drawPowerText();
     if (paused && net.mode === 'solo') drawPauseOverlay();
 
@@ -4216,10 +4226,10 @@ function render(dt){
       if (raceState.localDead && raceState.spectating && raceState.spectateTarget && net.players[raceState.spectateTarget]){
         ctx.font = 'bold 20px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = '#67e8f9';
-        ctx.fillText('👁  SPECTATING: ' + clipName(net.players[raceState.spectateTarget].name || 'Pemain', 14), W/2, 30);
+        ctx.fillText('👁  SPECTATING: ' + clipName(net.players[raceState.spectateTarget].name || 'Pemain', 14), W/2, BTN_Y - 52);
         ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.72)';
-        ctx.fillText('← / → pilih pemain   •   T chat   •   Kamu jatuh', W/2, 58);
+        ctx.fillText('← / → pilih pemain   •   T chat   •   Kamu jatuh', W/2, BTN_Y - 26);
       } else {
         ctx.font = 'bold 34px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = '#FF6B6B';
@@ -4754,6 +4764,16 @@ canvas.addEventListener('pointerdown', function(e){
       if (pointInRect(lx,ly,PAUSE_MENU)){
         sfxToggle(); paused = false; stopMusic(); setScene('menu'); return;
       }
+      return;
+    }
+    if (raceState.localDead && raceState.spectating && net.mode !== 'solo'){
+      const _b = hitBtn(lx,ly);
+      if (_b !== 0){
+        cycleSpectate(_b < 0 ? -1 : 1);
+        sfxToggle(); haptic(10);
+        return;
+      }
+      // Tap di area lain tidak memindahkan karakter; tetap spectator.
       return;
     }
     if (raceState.localDead) return;
