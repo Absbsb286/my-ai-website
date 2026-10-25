@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <script type="importmap">
@@ -14,7 +14,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#070918">
-<title>Blobby — Jelly Jump</title>
+<title>Blobby â€” Jelly Jump</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -231,7 +231,7 @@ let nameError = '';
 function haptic(p){ if(!settings.haptic || !navigator.vibrate) return; try{ navigator.vibrate(p); }catch(e){} }
 
 /* ============================================================
-   JELLY COLORS — Infinity Stone palette
+   JELLY COLORS â€” Infinity Stone palette
    ============================================================ */
 const JELLY_COLORS = [
   { light:'#ff9eb5', mid:'#ff2d55', dark:'#8a0020', glow:'255,45,85',   name:'Reality'  }, // Merah
@@ -243,7 +243,7 @@ const JELLY_COLORS = [
 ];
 
 /* ============================================================
-   NETWORK — Trystero
+   NETWORK â€” Trystero
    ============================================================ */
 const net = {
   mode: 'solo',
@@ -413,7 +413,7 @@ function startLobbyHeartbeat(){
       }
     } else if (state === 'race'){
       // Saat race: semua pemain kirim hello berkala agar nama pulih walau
-      // paket hello awal hilang (MQTT QoS 0). Interval 2 dtk cukup —
+      // paket hello awal hilang (MQTT QoS 0). Interval 2 dtk cukup â€”
       // identitas per-tick sudah dihemat via broadcastState.
       if (net.mode === 'solo'){ stopLobbyHeartbeat(); return; }
       try { net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: net.isHost}); } catch(e){}
@@ -502,7 +502,7 @@ async function joinRoomNet(code){
         pid => pid !== net.myId && net.players[pid] && net.players[pid].isHost
       );
       if (!hasHost) {
-        net.status = '❌ Room belum ditemukan. Cek kode, atau tekan Batalkan.';
+        net.status = 'âŒ Room belum ditemukan. Cek kode, atau tekan Batalkan.';
       }
     }, 8000);
 
@@ -590,7 +590,7 @@ function promoteAfterHostLeave(){
 
   if (newHostId === net.myId){
     net.isHost = true;
-    net.status = '👑 Host keluar — kamu jadi host baru';
+    net.status = 'ðŸ‘‘ Host keluar â€” kamu jadi host baru';
     try {
       net.actions.sendHello({id: net.myId, name: myName, nameColor: myNameColor, skin: selectedSkin, isHost: true});
     } catch(e){}
@@ -598,12 +598,12 @@ function promoteAfterHostLeave(){
   } else {
     net.isHost = false;
     const p = net.players[newHostId];
-    net.status = 'Host keluar — host baru: ' + (p ? p.name : 'pemain lain');
+    net.status = 'Host keluar â€” host baru: ' + (p ? p.name : 'pemain lain');
   }
 
   setTimeout(() => {
     if (net.status && net.status.indexOf('Host keluar') === 0){ net.status = ''; }
-    else if (net.status && net.status.indexOf('👑 Host keluar') === 0){ net.status = ''; }
+    else if (net.status && net.status.indexOf('ðŸ‘‘ Host keluar') === 0){ net.status = ''; }
   }, 4000);
 }
 
@@ -1299,7 +1299,7 @@ function updateGame(dt){
     const range = Math.max(1, max - min);
     const now = performance.now();
     const elapsed = (now - p.spawnTime) / 1000;
-    // posisi awal + kecepatan (bertanda) × waktu, lalu pantulan antar batas (billiard).
+    // posisi awal + kecepatan (bertanda) Ã— waktu, lalu pantulan antar batas (billiard).
     let y = (typeof p.initialX === 'number' ? p.initialX : p.x) + (p.vx || 0) * elapsed;
     let r = (y - min) % (2 * range);
     if (r < 0) r += 2 * range;
@@ -1417,7 +1417,7 @@ function spectatorCountFor(pid){
     if (id === pid) return; // diri sendiri tidak dihitung sebagai penonton
     const p = net.players[id];
     // Hanya pemain yang sudah mati (tidak hidup) yang sah sebagai spectator.
-    // Ini mencegah ikon mata palsu saat игрок/guest yang masih hidup
+    // Ini mencegah ikon mata palsu saat Ð¸Ð³Ñ€Ð¾Ðº/guest yang masih hidup
     // mengirim kembali target lama pada paket countdown/lamanya.
     if (p && p.alive === false && p.spectateTarget === pid && state === 'race' && raceState.phase === 'playing') n++;
   });
@@ -1465,7 +1465,7 @@ function updateDailyChallenge(finalScore){
       localStorage.setItem('blobby_daily_reward_claimed', '1');
       totalCoins += 1500;
       saveSkins();
-      if (typeof showToast === 'function') showToast('🏆 Daily Challenge 10 hari berturut! +1500 koin');
+      if (typeof showToast === 'function') showToast('ðŸ† Daily Challenge 10 hari berturut! +1500 koin');
     } else if (typeof showToast === 'function') {
       showToast('Daily Challenge: ' + streak + '/10 hari');
     }
@@ -1566,12 +1566,12 @@ function showResult(ranking){
 function updateRemotePlayers(){}
 
 /* ============================================================
-   SKY SYSTEM "Journey to Space" — STEP A2: gradient dinamis
+   SKY SYSTEM "Journey to Space" â€” STEP A2: gradient dinamis
    Ketinggian h = -camY (0 di tanah, membesar ke atas).
    Keyframe warna satu keluarga Midnight (ink/amber/mint),
    interpolasi linear antar keyframe supaya transisi halus.
    ============================================================ */
-/* B1.3 revisi (Hallmark): timeline diperlambat — terang hingga 1800,
+/* B1.3 revisi (Hallmark): timeline diperlambat â€” terang hingga 1800,
    senja 1800-2600, gelap 2600-3400, hitam 3400-4500, space 5500+.
    Awan penuh ikut diperlama agar fase langit terang bisa dinikmati. */
 const SKY_KEYS = [
@@ -1602,7 +1602,7 @@ function getSkyLayer(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP A3: bintang (cache sekali, parallax, twinkle)
+   SKY SYSTEM â€” STEP A3: bintang (cache sekali, parallax, twinkle)
    Warna bintang satu keluarga brand: ink-putih, amber, biru muda.
    ============================================================ */
 const STAR_COLORS = ['255,247,224', '255,226,122', '170,200,255'];
@@ -1653,7 +1653,7 @@ function drawStars(opacity){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP A4: planet (fade-in gradual per ketinggian)
+   SKY SYSTEM â€” STEP A4: planet (fade-in gradual per ketinggian)
    Posisi tetap di layar (terasa jauh), muncul halus via alpha.
    ============================================================ */
 /* B1.3 (Hallmark+Impeccable): urutan sesuai jarak dari Bumi, tiap
@@ -1661,7 +1661,7 @@ function drawStars(opacity){
    dalam satu keluarga Midnight. Glow TIDAK diubah di sini (B1.6). */
 /* B1.3 revisi 3: tiap planet SEGMEN 2200 + overlap 200 antar
    planet (tidak ada langit kosong). Terbit 400, penuh 1400,
-   terbenam 400 — tiap planet bisa dinikmati lama.
+   terbenam 400 â€” tiap planet bisa dinikmati lama.
    Venus menyambung langsung dari Bumi (6800), Saturnus crossfade
    ke galaksi (14800). */
 const PLANETS = [
@@ -1689,7 +1689,7 @@ function getPlanetState(p, h){
 function drawPlanetBody(px, py, r, p){
   ctx.save();
   ctx.translate(px, py);
-  // B1.6 (Impeccable/restraint): glow planet max 5px — definisi
+  // B1.6 (Impeccable/restraint): glow planet max 5px â€” definisi
   // bentuk dari shading radial, bukan dari halo. Jelly tak tersentuh.
   if (p.glow){ ctx.shadowColor = p.color; ctx.shadowBlur = 5; }
   else { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 4; }
@@ -1771,7 +1771,7 @@ function drawPlanets(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP B1.4: galaksi (zona h 14800-19000)
+   SKY SYSTEM â€” STEP B1.4: galaksi (zona h 14800-19000)
    Impeccable: Milky Way berlapis + noise deterministik (bukan
    satu gradient malas), Andromeda punya kedalaman, bintang
    galaksi ikut twinkle halus.
@@ -1804,7 +1804,7 @@ function drawNebulaBack(h){
   }
   ctx.restore();
 }
-/* B1.4 revisi 3: Bumi + aurora diperlama lagi —
+/* B1.4 revisi 3: Bumi + aurora diperlama lagi â€”
    zona 4500-6800 (window 2300), fade 600/600, full ~1100. */
 const EARTH_FROM = 4500, EARTH_TO = 6800, EARTH_FADE = 600;
 function drawEarth(h){
@@ -1923,14 +1923,14 @@ function drawGalaxies(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP B1.5: black hole (h >= 18200, evolving endgame)
+   SKY SYSTEM â€” STEP B1.5: black hole (h >= 18200, evolving endgame)
    Impeccable+Halmark: accretion disk gradient amber->coral dari
    palette terkunci, photon ring tipis, distorsi hanya lengkung
-   bintang samar — subtle, tidak norak.
+   bintang samar â€” subtle, tidak norak.
    ============================================================ */
 /* B1.5 revisi 3 (timeline + endgame hidup): black hole masuk
    di 18200 (overlap dengan ekor galaksi), lalu TERUS berevolusi
-   sedalam apa pun pemain naik —
+   sedalam apa pun pemain naik â€”
    membesar logaritmik, debris bertambah, nebula dalam berganti hue,
    warp streak memanjang. Skor 3000 vs 8000 vs 13000 terlihat beda. */
 const BLACK_HOLE_FROM = 18200, BLACK_HOLE_FADE = 800;
@@ -1945,7 +1945,7 @@ function drawBlackHole(h){
   const grow = 60*(1-Math.exp(-bhT/25000));
   const now = performance.now()*0.001;
   // Nebula dalam: muncul setelah black hole penuh, hue violet<->teal
-  // bersiklus terhadap kedalaman — langit terus berganti.
+  // bersiklus terhadap kedalaman â€” langit terus berganti.
   const deepA = a*Math.min(0.5, bhT/8000*0.5);
   if (deepA > 0.01){
     const mix = 0.5+0.5*Math.sin(bhT*0.00012);
@@ -2045,7 +2045,7 @@ function drawBlackHole(h){
 }
 
 /* ============================================================
-   SKY SYSTEM — STEP A5: event langit (lalu lintas atmosfer)
+   SKY SYSTEM â€” STEP A5: event langit (lalu lintas atmosfer)
    State di global terpisah (BUKAN net.*) agar networking steril.
    Pakai Math.random (BUKAN rng()) supaya tidak menggeser
    sequence platform yang memakai seeded RNG.
@@ -2064,7 +2064,7 @@ const MAX_SKY_EVENTS = 3;   // batas anti-spam
 const SKY_EVENT_COOLDOWN = 5; // detik antar spawn per tipe
 let skyEventList = [];
 let skyEventCooldown = {};
-// Seed tata letak awan — diacak tiap game (pakai Math.random, BUKAN rng,
+// Seed tata letak awan â€” diacak tiap game (pakai Math.random, BUKAN rng,
 // supaya sequence platform yang memakai seeded RNG tidak tergeser).
 let cloudSeed = 0;
 // Spawn satu event dari tepi layar acak (kiri/kanan)
@@ -2222,7 +2222,7 @@ function drawBackground(dt){
   drawEarth(-camY);
   drawPlanets(-camY);
   drawBlackHole(-camY);
-  // B1.2 (Hallmark): awan hanya milik lapisan bawah — penuh di h<400,
+  // B1.2 (Hallmark): awan hanya milik lapisan bawah â€” penuh di h<400,
   // fade-out halus 400-500, hilang total di h>=500. Warna tetap token
   // Midnight yang terkunci (putih kebiruan desaturasi), tanpa hue baru.
   const hCloud = Math.max(0, -camY);
@@ -2295,7 +2295,7 @@ function drawPlatforms(){
 }
 
 /* ============================================================
-   JELLY — Visual collectible dengan 6 warna Infinity Stone
+   JELLY â€” Visual collectible dengan 6 warna Infinity Stone
    ============================================================ */
 function drawJelly(cx, cy, scale, phase, colorIdx){
   const R = 12 * scale;
@@ -2319,7 +2319,7 @@ function drawJelly(cx, cy, scale, phase, colorIdx){
     ctx.closePath();
   }
 
-  // 1. Glow — berlapis: halo luar + core
+  // 1. Glow â€” berlapis: halo luar + core
   ctx.save();
   ctx.shadowColor = 'rgba(' + palette.glow + ', 0.85)';
   ctx.shadowBlur = 22 * scale;
@@ -2372,7 +2372,7 @@ function drawJelly(cx, cy, scale, phase, colorIdx){
 
   ctx.restore();
 
-  // 4. Outline — crisp ink
+  // 4. Outline â€” crisp ink
   ctx.save();
   blobPath();
   ctx.strokeStyle = 'rgba(8,8,20,0.55)';
@@ -2400,7 +2400,7 @@ function drawParticles(){
 }
 
 /* ============================================================
-   KARAKTER — render dipisah ke public/game/characters.js
+   KARAKTER â€” render dipisah ke public/game/characters.js
    ============================================================ */
 function drawCharacter(x,y,size,powered,squash,vx,skinId,opacity,extra){
   if (!window.BlobbyCharacters) return;
@@ -2486,7 +2486,7 @@ if (specCount > 0){
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#67e8f9';
   ctx.shadowColor = 'rgba(103,232,249,.6)'; ctx.shadowBlur = 6;
-  ctx.fillText('👁 ' + specCount, ip.x, ip.y - camY - 52);
+  ctx.fillText('ðŸ‘ ' + specCount, ip.x, ip.y - camY - 52);
   ctx.shadowBlur = 0;
   ctx.restore();
 }
@@ -2556,8 +2556,8 @@ function drawPauseOverlay(){
   ctx.fillText('Tips: tekan P atau Esc untuk lanjut cepat', W/2, H/2 - 20);
   ctx.restore();
 
-  drawBigBtn(PAUSE_RESUME, '▶ Lanjutkan', true, 18);
-  drawBigBtn(PAUSE_MENU, '⌂ Menu Utama', false, 15);
+  drawBigBtn(PAUSE_RESUME, 'â–¶ Lanjutkan', true, 18);
+  drawBigBtn(PAUSE_MENU, 'âŒ‚ Menu Utama', false, 15);
 }
 
 function drawRaceHUD(){
@@ -2601,12 +2601,12 @@ function drawRaceHUD(){
     ctx.textAlign='center';
     ctx.font='bold 13px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle='#FFF7E0';
-    ctx.fillText('⚡ MEGA Blobby ⚡  '+powerTimer.toFixed(1)+'s', W/2, by-11);
+    ctx.fillText('âš¡ MEGA Blobby âš¡  '+powerTimer.toFixed(1)+'s', W/2, by-11);
   }
 
   if (net.mode !== 'solo'){
     const remain = Math.max(0, Math.ceil(raceState.timeLeft));
-    const timerLabel = '⏱ ' + remain + 's';
+    const timerLabel = 'â± ' + remain + 's';
     ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     // Pill gelap supaya timer tetap terbaca saat platform lewat di belakangnya.
@@ -2629,7 +2629,7 @@ function drawRaceHUD(){
     });
 
     // REK 1 (Hallmark grid): leaderboard ke kolom kiri di bawah timer,
-    // margin 10px sejajar tepi kiri, sejajar kolom skor — jauh dari jempol kanan.
+    // margin 10px sejajar tepi kiri, sejajar kolom skor â€” jauh dari jempol kanan.
     const lbY = 72, rowH = 20, lbW = 160, lbX = 10;
     ctx.fillStyle = 'rgba(7,9,24,0.66)';
     roundRect(lbX, lbY, lbW, rowH * lb.length + 10, 8); ctx.fill();
@@ -2642,11 +2642,11 @@ function drawRaceHUD(){
       ctx.font = (p.isMe ? 'bold ' : '') + '12px Fredoka, system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillStyle = p.alive ? nameColorOf(p) : 'rgba(255,255,255,0.4)';
-      const medal = i === 0 ? '🥇 ' : i === 1 ? '🥈 ' : i === 2 ? '🥉 ' : (i+1) + '. ';
+      const medal = i === 0 ? 'ðŸ¥‡ ' : i === 1 ? 'ðŸ¥ˆ ' : i === 2 ? 'ðŸ¥‰ ' : (i+1) + '. ';
       ctx.fillText(medal + p.name, lbX + 8, y);
       ctx.textAlign = 'right';
       ctx.fillStyle = p.alive ? '#FFF7E0' : 'rgba(255,255,255,0.5)';
-      ctx.fillText(p.alive ? String(p.score) : '💀', lbX + lbW - 8, y);
+      ctx.fillText(p.alive ? String(p.score) : 'ðŸ’€', lbX + lbW - 8, y);
     });
 
     if (raceState.timeLeft <= 5 && raceState.phase === 'playing'){
@@ -2991,7 +2991,7 @@ function chooseCharacter(id){
     syncSkinToNet();
     sfxUnlock();
     haptic([20,30,20,30,40]);
-    if (typeof showToast === 'function') showToast('Berhasil beli & pakai ' + sk.name + ' ✓');
+    if (typeof showToast === 'function') showToast('Berhasil beli & pakai ' + sk.name + ' âœ“');
     // Animasi unlock singkat (radial highlight + putaran preview).
     skinUnlockAnim = { id: sk.id, until: performance.now() + 220 };
     return true;
@@ -3039,7 +3039,7 @@ function cancelProfile(){
 }
 
 /* ============================================================
-   MENU — dengan orbit 3D untuk jelly
+   MENU â€” dengan orbit 3D untuk jelly
    ============================================================ */
 function drawMenuDailyTab(){
   const b = MENU_DAILY;
@@ -3055,7 +3055,7 @@ function drawMenuDailyTab(){
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 16px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = '#FFD02E';
-  ctx.fillText('🔥', b.x + 14, b.y + b.h/2);
+  ctx.fillText('ðŸ”¥', b.x + 14, b.y + b.h/2);
   ctx.fillStyle = '#FFF7E0';
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillText('DAILY', b.x + 38, b.y + 16);
@@ -3082,10 +3082,10 @@ function drawDailyPanel(){
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = 'bold 24px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = '#FFD02E';
-  ctx.fillText('🔥 DAILY CHALLENGE', W/2, 112);
+  ctx.fillText('ðŸ”¥ DAILY CHALLENGE', W/2, 112);
   ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,247,224,0.76)';
-  ctx.fillText('Naik skor ≥ 10.000 dalam sehari.', W/2, 146);
+  ctx.fillText('Naik skor â‰¥ 10.000 dalam sehari.', W/2, 146);
   ctx.fillText('Lakukan 10 hari berturut-turut untuk reward.', W/2, 168);
 
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3103,7 +3103,7 @@ function drawDailyPanel(){
   }
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = ds.qualifiedToday ? '#4ADE80' : 'rgba(255,247,224,0.65)';
-  ctx.fillText(ds.qualifiedToday ? '✓ Hari ini sudah memenuhi target' : 'Hari ini belum memenuhi target', W/2, 282);
+  ctx.fillText(ds.qualifiedToday ? 'âœ“ Hari ini sudah memenuhi target' : 'Hari ini belum memenuhi target', W/2, 282);
 
   ctx.fillStyle = 'rgba(103,232,249,0.10)';
   roundRect(x+22, 306, w-44, 88, 14); ctx.fill();
@@ -3114,7 +3114,7 @@ function drawDailyPanel(){
   ctx.fillText(ds.claimed ? 'REWARD SUDAH DIKLAIM' : 'REWARD 10 HARI', W/2, 330);
   ctx.font = 'bold 23px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = ds.claimed ? 'rgba(74,222,128,0.85)' : '#FFD02E';
-  ctx.fillText(ds.claimed ? '+1500 koin ✓' : '+1500 koin', W/2, 360);
+  ctx.fillText(ds.claimed ? '+1500 koin âœ“' : '+1500 koin', W/2, 360);
   ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,247,224,0.55)';
   ctx.fillText('Berlaku sekali saat streak mencapai 10 hari.', W/2, 383);
@@ -3146,18 +3146,18 @@ function drawMenuScene(dt, backgroundOnly){
     ctx.fillText('Blobby', W/2, 170);
     ctx.font='bold 15px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle='rgba(255,255,255,0.9)';
-    ctx.fillText('Jelly Jump — Solo & Multiplayer', W/2, 205);
+    ctx.fillText('Jelly Jump â€” Solo & Multiplayer', W/2, 205);
     ctx.restore();
   }
 
   const by = 330 + Math.sin(menuT*3)*14;
   const sq = 1 + Math.sin(menuT*3)*0.05;
 
-  // ─── Hitung posisi 6 jelly dalam orbit 3D ───
+  // â”€â”€â”€ Hitung posisi 6 jelly dalam orbit 3D â”€â”€â”€
   const jellyOrbit = [];
   for (let i=0; i<6; i++){
     const a = menuT*0.7 + i*(Math.PI*2/6) + Math.sin(menuT*0.5 + i)*0.3;
-    const depth = Math.sin(a);   // -1 (belakang) → +1 (depan)
+    const depth = Math.sin(a);   // -1 (belakang) â†’ +1 (depan)
     jellyOrbit.push({
       x: W/2 + Math.cos(a)*118,
       y: by + Math.sin(a)*42,
@@ -3171,7 +3171,7 @@ function drawMenuScene(dt, backgroundOnly){
   // Urutkan dari belakang ke depan
   jellyOrbit.sort((a,b) => a.depth - b.depth);
 
-  // ─── Layer 1: jelly di BELAKANG karakter ───
+  // â”€â”€â”€ Layer 1: jelly di BELAKANG karakter â”€â”€â”€
   for (const j of jellyOrbit){
     if (j.depth <= 0){
       ctx.save();
@@ -3181,12 +3181,12 @@ function drawMenuScene(dt, backgroundOnly){
     }
   }
 
-  // ─── Layer 2: karakter Blobby ───
+  // â”€â”€â”€ Layer 2: karakter Blobby â”€â”€â”€
   // Scene lain memakai menu sebagai latar (backgroundOnly). Jangan gambar
   // karakter di sana supaya wajahnya tidak membayang di belakang form/overlay.
   if (!backgroundOnly) drawCharacter(W/2, by, 74, false, sq, 0, selectedSkin);
 
-  // ─── Layer 3: jelly di DEPAN karakter ───
+  // â”€â”€â”€ Layer 3: jelly di DEPAN karakter â”€â”€â”€
   for (const j of jellyOrbit){
     if (j.depth > 0){
       ctx.save();
@@ -3202,20 +3202,20 @@ function drawMenuScene(dt, backgroundOnly){
     drawMenuProfileChip();
     ctx.font='bold 12px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle='rgba(255,224,102,0.95)';
-    ctx.fillText('💰 ' + totalCoins + ' koin', W/2, 449);
+    ctx.fillText('ðŸ’° ' + totalCoins + ' koin', W/2, 449);
     ctx.restore();
 
-    drawBigBtn(MENU_SOLO, '🎯 Solo', true);
-    drawBigBtn(MENU_MP, '🌐 Multiplayer', true);
-    drawBigBtn(MENU_CHARACTER, 'Karakter · ' + getSkin(selectedSkin).name, false, 14);
-    drawBigBtn(MENU_SET,  '⚙ Pengaturan', false, 15);
+    drawBigBtn(MENU_SOLO, 'ðŸŽ¯ Solo', true);
+    drawBigBtn(MENU_MP, 'ðŸŒ Multiplayer', true);
+    drawBigBtn(MENU_CHARACTER, 'Karakter Â· ' + getSkin(selectedSkin).name, false, 14);
+    drawBigBtn(MENU_SET,  'âš™ Pengaturan', false, 15);
 
     if (best > 0){
       ctx.save();
       ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillText('🏆 Skor Terbaik Solo: ' + best, W/2, H - 20);
+      ctx.fillText('ðŸ† Skor Terbaik Solo: ' + best, W/2, H - 20);
       ctx.restore();
     }
   }
@@ -3307,18 +3307,18 @@ function drawTutorialOverlay(){
   ctx.fillStyle='rgba(255,247,224,0.62)';
   ctx.fillText('Kenali Blobby dulu, 20 detik saja.', W/2, 174);
 
-  drawTutorialRow('↕',  'Blobby memantul otomatis', 'dari platform ke platform.', 216);
-  drawTutorialRow('◀▶', 'Geser kiri / kanan',        'tahan tombol ◀ ▶ atau panah.', 264);
-  drawTutorialRow('⤒',  'Lompat ganda',              'ketuk 2× di HP, Space / W di PC.', 312);
-  drawTutorialRow('🪙', 'Kumpulkan 17 koin jelly',    'untuk berubah jadi MEGA.', 360);
-  drawTutorialRow('🏆', 'Skor dari ketinggian + koin', 'koin otomatis tersimpan.', 408);
+  drawTutorialRow('â†•',  'Blobby memantul otomatis', 'dari platform ke platform.', 216);
+  drawTutorialRow('â—€â–¶', 'Geser kiri / kanan',        'tahan tombol â—€ â–¶ atau panah.', 264);
+  drawTutorialRow('â¤’',  'Lompat ganda',              'ketuk 2Ã— di HP, Space / W di PC.', 312);
+  drawTutorialRow('ðŸª™', 'Kumpulkan 17 koin jelly',    'untuk berubah jadi MEGA.', 360);
+  drawTutorialRow('ðŸ†', 'Skor dari ketinggian + koin', 'koin otomatis tersimpan.', 408);
 
   ctx.font='11px Fredoka, system-ui, sans-serif';
   ctx.fillStyle='rgba(168,255,205,0.82)';
   ctx.fillText('Tips: hindari jatuh terlalu jauh dari kamera.', W/2, 462);
   ctx.restore();
 
-  drawBigBtn(TUT_START, tutorialPendingSolo ? '▶ Siap, Main!' : 'Mengerti', true, 18);
+  drawBigBtn(TUT_START, tutorialPendingSolo ? 'â–¶ Siap, Main!' : 'Mengerti', true, 18);
 
   const b = TUT_CLOSE;
   ctx.save();
@@ -3329,7 +3329,7 @@ function drawTutorialOverlay(){
   ctx.font='bold 16px Fredoka, system-ui, sans-serif';
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='#FFF7E0';
-  ctx.fillText('✕', b.x+b.w/2, b.y+b.h/2+1);
+  ctx.fillText('âœ•', b.x+b.w/2, b.y+b.h/2+1);
   ctx.restore();
 }
 
@@ -3368,9 +3368,9 @@ function drawMPMenuScene(){
   ctx.fillText('Siapa yang paling tinggi?', W/2, 280);
   ctx.restore();
 
-  drawBigBtn(MPM_CREATE, '🏠 Buat Room', true);
-  drawBigBtn(MPM_JOIN,   '🔗 Gabung Room', true);
-  drawBigBtn(MPM_BACK,   '← Kembali', false);
+  drawBigBtn(MPM_CREATE, 'ðŸ  Buat Room', true);
+  drawBigBtn(MPM_JOIN,   'ðŸ”— Gabung Room', true);
+  drawBigBtn(MPM_BACK,   'â† Kembali', false);
 }
 
 function drawJoinScene(){
@@ -3396,8 +3396,8 @@ function drawJoinScene(){
   }
   ctx.restore();
 
-  drawBigBtn(JOIN_JOIN, '🔗 Join', true);
-  drawBigBtn(JOIN_BACK, '← Kembali', false);
+  drawBigBtn(JOIN_JOIN, 'ðŸ”— Join', true);
+  drawBigBtn(JOIN_BACK, 'â† Kembali', false);
 }
 
 function drawDisabledBtn(r, label){
@@ -3466,7 +3466,7 @@ function drawProfileScene(){
   ctx.textAlign = 'left';
   ctx.font = '11px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = nameError ? '#FF9E9E' : 'rgba(255,247,224,0.55)';
-  ctx.fillText(nameError || '2–10 karakter. Tanpa emoji.', 70, 398);
+  ctx.fillText(nameError || '2â€“10 karakter. Tanpa emoji.', 70, 398);
 
   // Warna nama.
   const selectedColor = NAME_COLORS.find(c => c.hex === colorDraft) || NAME_COLORS[0];
@@ -3534,14 +3534,14 @@ function drawWaitingCharacterChip(){
   ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#FFF7E0';
-  ctx.fillText('Karakter · ' + getSkin(selectedSkin).name, r.x+34, r.y+r.h/2+0.5);
+  ctx.fillText('Karakter Â· ' + getSkin(selectedSkin).name, r.x+34, r.y+r.h/2+0.5);
   drawPencilIcon(r.x+r.w-16, r.y+r.h/2, 12, 'rgba(255,208,46,0.9)');
   ctx.save();
   ctx.textAlign="center"; ctx.textBaseline="middle";
   ctx.font="bold 12px Fredoka, system-ui, -apple-system, sans-serif";
   ctx.fillStyle="rgba(255,255,255,0.55)";
   const _ds = (localStorage.getItem("blobby_daily_streak")||"0");
-  ctx.fillText("Tekan T untuk chat   •   Daily Challenge: " + _ds + "/10 hari (skor >= 10000/hari)", W/2, H-24);
+  ctx.fillText("Tekan T untuk chat   â€¢   Daily Challenge: " + _ds + "/10 hari (skor >= 10000/hari)", W/2, H-24);
   ctx.restore();
   ctx.restore();
 }
@@ -3587,7 +3587,7 @@ function drawWaitingScene(){
     ctx.fillText(net.isHost ? 'Membuat Room...' : 'Bergabung...', W/2, H/2 - 40);
 
     const dotCount = 1 + (Math.floor(performance.now() / 400) % 3);
-    const dots = '●'.repeat(dotCount);
+    const dots = 'â—'.repeat(dotCount);
     ctx.font = 'bold 28px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle = 'rgba(255,224,102,0.9)';
     ctx.fillText(dots, W/2, H/2 + 10);
@@ -3609,20 +3609,20 @@ function drawWaitingScene(){
     ctx.fillText('Mencari peer di jaringan...', W/2, H/2 + 130);
 
     ctx.restore();
-    drawBigBtn(WAIT_LEAVE, '← Batalkan', false);
+    drawBigBtn(WAIT_LEAVE, 'â† Batalkan', false);
     return;
   }
 
   ctx.font = 'bold 26px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = '#FFF7E0';
-  ctx.fillText(net.isHost ? '🏠 Room Kamu' : '⏳ Menunggu Host', W/2, 90);
+  ctx.fillText(net.isHost ? 'ðŸ  Room Kamu' : 'â³ Menunggu Host', W/2, 90);
 
   // Indicator: hanya tampil kalau room ini memang baru selesai race.
   // Jangan muncul di room yang baru dibuat (phase masih 'idle').
   if (raceState.phase === 'ended'){
     ctx.font = 'bold 10px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle = 'rgba(168,255,205,0.85)';
-    ctx.fillText('🔄 Race selesai — siap main lagi!', W/2, 110);
+    ctx.fillText('ðŸ”„ Race selesai â€” siap main lagi!', W/2, 110);
   }
 
   ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3705,10 +3705,10 @@ function drawWaitingScene(){
     ctx.textAlign = 'right';
     if (p.isHost){
       ctx.fillStyle = '#a8ffcd';
-      ctx.fillText('👑 Host', W/2+136, y+5);
+      ctx.fillText('ðŸ‘‘ Host', W/2+136, y+5);
     } else {
       ctx.fillStyle = p.ready ? '#a8ffcd' : 'rgba(255,255,255,0.4)';
-      ctx.fillText(p.ready ? '✓ Siap' : '...', W/2+136, y+5);
+      ctx.fillText(p.ready ? 'âœ“ Siap' : '...', W/2+136, y+5);
     }
   });
   ctx.restore();
@@ -3732,7 +3732,7 @@ function drawWaitingScene(){
   ctx.restore();
 
   if (net.isHost){
-    drawBigBtn(WAIT_START, '▶ MULAI RACE', true);
+    drawBigBtn(WAIT_START, 'â–¶ MULAI RACE', true);
   } else {
     ctx.save();
     ctx.font = 'bold 15px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3741,7 +3741,7 @@ function drawWaitingScene(){
     ctx.fillText('Menunggu host memulai...', W/2, WAIT_START.y + 30);
     ctx.restore();
   }
-  drawBigBtn(WAIT_LEAVE, '← Keluar', false);
+  drawBigBtn(WAIT_LEAVE, 'â† Keluar', false);
 }
 
 function drawGameOverScene(){
@@ -3774,7 +3774,7 @@ function drawGameOverScene(){
 
   ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.fillText('🏆 Terbaik: ' + best, W/2, cy+105);
+  ctx.fillText('ðŸ† Terbaik: ' + best, W/2, cy+105);
 
   drawJelly(W/2-55, cy+135, 0.7, 0, 0);
   ctx.font = 'bold 15px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3789,8 +3789,8 @@ function drawGameOverScene(){
 
   ctx.restore();
 
-  drawBigBtn(GO_RETRY, '▶ Main Lagi', true);
-  drawBigBtn(GO_MENU, '⌂ Menu Utama', false);
+  drawBigBtn(GO_RETRY, 'â–¶ Main Lagi', true);
+  drawBigBtn(GO_MENU, 'âŒ‚ Menu Utama', false);
 }
 
 function drawResultScene(){
@@ -3807,7 +3807,7 @@ function drawResultScene(){
   ctx.font = 'bold 30px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = isWinner ? '#FFD02E' : '#FFF7E0';
   ctx.fillText(
-    isWinner ? '🎉 KAMU MENANG!' : (myRank ? 'RANK #' + myRank : 'RACE SELESAI'),
+    isWinner ? 'ðŸŽ‰ KAMU MENANG!' : (myRank ? 'RANK #' + myRank : 'RACE SELESAI'),
     W/2, 130
   );
 
@@ -3835,7 +3835,7 @@ function drawResultScene(){
     }
 
     ctx.textBaseline = 'middle';
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1);
+    const medal = i === 0 ? 'ðŸ¥‡' : i === 1 ? 'ðŸ¥ˆ' : i === 2 ? 'ðŸ¥‰' : '#' + (i+1);
     ctx.font = 'bold ' + rankFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#FFF7E0';
@@ -3853,10 +3853,10 @@ function drawResultScene(){
     ctx.font = 'bold ' + nameFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
     let nameText = fullName;
     while (Array.from(nameText).length > 1
-        && ctx.measureText(nameText + '…').width + markerW > 132){
+        && ctx.measureText(nameText + 'â€¦').width + markerW > 132){
       nameText = Array.from(nameText).slice(0, -1).join('');
     }
-    if (nameText !== fullName) nameText += '…';
+    if (nameText !== fullName) nameText += 'â€¦';
     ctx.fillStyle = nameColorOf(p);
     ctx.fillText(nameText, W/2-80, y+1);
     if (marker){
@@ -3869,7 +3869,7 @@ function drawResultScene(){
     ctx.textAlign = 'right';
     ctx.font = 'bold ' + nameFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
     ctx.fillStyle = p.alive ? '#a8ffcd' : 'rgba(255,255,255,0.5)';
-    ctx.fillText(p.alive ? String(p.score) : '💀', W/2+60, y+1);
+    ctx.fillText(p.alive ? String(p.score) : 'ðŸ’€', W/2+60, y+1);
 
     if (p.bonus > 0){
       ctx.font = 'bold ' + bonusFs + 'px Fredoka, system-ui, -apple-system, sans-serif';
@@ -3883,14 +3883,14 @@ function drawResultScene(){
   ctx.textAlign = 'center';
   ctx.font = 'bold 14px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(168,255,205,0.95)';
-  ctx.fillText('💰 + ' + totalEarned + ' koin  (Jelly: ' + raceState.lastEarnedCoins + ' + Bonus: ' + raceState.myBonus + ')', W/2, 490);
+  ctx.fillText('ðŸ’° + ' + totalEarned + ' koin  (Jelly: ' + raceState.lastEarnedCoins + ' + Bonus: ' + raceState.myBonus + ')', W/2, 490);
   ctx.font = 'bold 12px Fredoka, system-ui, -apple-system, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.fillText('Total koin: ' + totalCoins, W/2, 515);
 
   // Tombol: Main Lagi (kembali ke lobby) & Keluar Room
   // Main Lagi = primary (kuning), Keluar Room = danger (merah transparan)
-  drawBigBtn(RESULT_REPLAY, '▶ Main Lagi', true);
+  drawBigBtn(RESULT_REPLAY, 'â–¶ Main Lagi', true);
   
   // Custom draw untuk Keluar Room - warna merah danger
   ctx.save();
@@ -3906,7 +3906,7 @@ function drawResultScene(){
   ctx.font = '600 17px Fredoka, system-ui, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#FFB4B4';
-  ctx.fillText('🚪 Keluar Room', r.x+r.w/2, r.y+r.h/2+0.5);
+  ctx.fillText('ðŸšª Keluar Room', r.x+r.w/2, r.y+r.h/2+0.5);
   ctx.restore();
   
   // Hint text
@@ -3918,10 +3918,10 @@ function drawResultScene(){
 }
 
 const SETTINGS_ITEMS = [
-  { id:'music', label:'🎵 Musik' },
-  { id:'sfx',   label:'🔊 Efek Suara' },
-  { id:'haptic',label:'📳 Getaran' },
-  { id:'trail', label:'✨ Trail Karakter' }
+  { id:'music', label:'ðŸŽµ Musik' },
+  { id:'sfx',   label:'ðŸ”Š Efek Suara' },
+  { id:'haptic',label:'ðŸ“³ Getaran' },
+  { id:'trail', label:'âœ¨ Trail Karakter' }
 ];
 function settingsItemRect(i){
   const w = 280, h = 44, gap = 12, startY = 240;
@@ -3964,7 +3964,7 @@ function drawSettingsScene(){
   SETTINGS_ITEMS.forEach((item, i) => {
     drawToggleBtn(settingsItemRect(i), item.label, settings[item.id]);
   });
-  drawBigBtn(SET_BACK, '← Kembali', false);
+  drawBigBtn(SET_BACK, 'â† Kembali', false);
 }
 
 function hexToRgb(hex){
@@ -4143,7 +4143,7 @@ function drawCharactersScene(){
   ctx.fillStyle = "rgba(255,247,224,0.58)";
   ctx.fillText("Kumpulkan jelly saat race untuk membuka karakter baru.", W/2, 568);
   ctx.restore();
-  drawBigBtn(CHAR_BACK_R, "← Kembali", false);
+  drawBigBtn(CHAR_BACK_R, "â† Kembali", false);
 }
 
 function characterFXEntries(){
@@ -4205,7 +4205,7 @@ function render(dt){
           ctx.font = 'bold 11px Fredoka, system-ui, -apple-system, sans-serif';
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillStyle = '#67e8f9'; ctx.shadowColor='rgba(103,232,249,.6)'; ctx.shadowBlur=6;
-          ctx.fillText('👁 ' + _sc, player.x, player.y - camY - 52);
+          ctx.fillText('ðŸ‘ ' + _sc, player.x, player.y - camY - 52);
           ctx.shadowBlur=0; ctx.restore();
         }
       }
@@ -4226,10 +4226,7 @@ if (raceState.phase === 'playing' && raceState.localDead && raceState.spectating
       if (raceState.localDead && raceState.spectating && raceState.spectateTarget && net.players[raceState.spectateTarget]){
         ctx.font = 'bold 20px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = '#67e8f9';
-        ctx.fillText('👁  SPECTATING: ' + clipName(net.players[raceState.spectateTarget].name || 'Pemain', 14), W/2, BTN_Y - 52);
-        ctx.font = 'bold 13px Fredoka, system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.72)';
-        ctx.fillText('← / → pilih pemain   •   T chat   •   Kamu jatuh', W/2, BTN_Y - 26);
+        ctx.fillText('ðŸ‘  SPECTATING: ' + clipName(net.players[raceState.spectateTarget].name || 'Pemain', 14), W/2, BTN_Y - 52);
       } else {
         ctx.font = 'bold 34px Fredoka, system-ui, -apple-system, sans-serif';
         ctx.fillStyle = '#FF6B6B';
@@ -4253,7 +4250,7 @@ if (raceState.phase === 'playing' && raceState.localDead && raceState.spectating
       ctx.fillText('Menghitung hasil race...', W/2, H/2 - 10);
       ctx.font = 'bold 20px Fredoka, system-ui, -apple-system, sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillText('●'.repeat(1 + (Math.floor(performance.now()/400)%3)), W/2, H/2 + 30);
+      ctx.fillText('â—'.repeat(1 + (Math.floor(performance.now()/400)%3)), W/2, H/2 + 30);
       ctx.restore();
     }
   }
@@ -4512,7 +4509,7 @@ function hostStartRace(){
   // mengakhiri race (hanya 1 pemain alive) dan host dapat bonus gratis.
   const remoteCount = Object.keys(net.players).length - 1;
   if (remoteCount < 1){
-    net.status = '👥 Butuh minimal 2 pemain untuk mulai race';
+    net.status = 'ðŸ‘¥ Butuh minimal 2 pemain untuk mulai race';
     return;
   }
   // Pastikan semua pemain di daftar benar-benar masih terhubung. Tanpa ini,
@@ -4523,7 +4520,7 @@ function hostStartRace(){
     if (net.room && typeof net.room.getPeers === 'function'){
       peerCount = Object.keys(net.room.getPeers()).length;
       if (peerCount < remoteCount){
-        net.status = '👥 Tunggu semua pemain terhubung dulu';
+        net.status = 'ðŸ‘¥ Tunggu semua pemain terhubung dulu';
         return;
       }
     }
